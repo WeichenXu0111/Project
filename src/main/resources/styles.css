@@ -1,0 +1,338 @@
+.root {
+    -fx-font-family: "Segoe UI", "Inter", "Helvetica Neue", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #eef2f6;
+    -fx-accent: #0b5f72;
+    -fx-focus-color: #0b5f72;
+    -fx-faint-focus-color: rgba(11,95,114,0.18);
+}
+
+.app-shell {
+    -fx-background-color: #eef2f6;
+}
+
+.label {
+    -fx-text-fill: #1a2937;
+}
+
+.muted-text {
+    -fx-text-fill: #58697e;
+    -fx-font-size: 12.5px;
+}
+
+.app-header {
+    -fx-background-color: linear-gradient(to right, #0b2a43, #0f3b59, #0f4a66);
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.14), 18, 0.22, 0, 6);
+}
+
+.app-title {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 20px;
+    -fx-font-weight: 700;
+}
+
+.brand-subtitle {
+    -fx-text-fill: #d6e4f0;
+    -fx-font-size: 12px;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: #e7f0f7;
+    -fx-font-weight: 600;
+    -fx-background-radius: 8px;
+    -fx-padding: 6px 12px;
+}
+
+.nav-button:hover {
+    -fx-background-color: rgba(255,255,255,0.16);
+}
+
+.ghost-button {
+    -fx-border-color: rgba(255,255,255,0.6);
+    -fx-border-radius: 8px;
+}
+
+.hero-title {
+    -fx-font-size: 30px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #0b2134;
+}
+
+.hero-subtitle {
+    -fx-font-size: 14px;
+    -fx-text-fill: #54677b;
+}
+
+.hero-pill {
+    -fx-background-color: #e3edf3;
+    -fx-text-fill: #0b4860;
+    -fx-font-size: 11px;
+    -fx-font-weight: 600;
+    -fx-padding: 4px 10px;
+    -fx-background-radius: 999px;
+}
+
+.hero-panel {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 18px;
+    -fx-padding: 22px 24px;
+    -fx-border-color: #dde5ef;
+    -fx-border-radius: 18px;
+    -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.08), 18, 0.24, 0, 6);
+}
+
+.section-title {
+    -fx-font-size: 22px;
+    -fx-font-weight: 700;
+    -fx-text-fill: #0b2134;
+}
+
+.card-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: 600;
+    -fx-text-fill: #0b2134;
+}
+
+.card {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 16px;
+    -fx-padding: 24px;
+    -fx-border-color: #dde5ef;
+    -fx-border-radius: 16px;
+    -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.08), 18, 0.24, 0, 6);
+}
+
+.portal-card {
+    -fx-background-color: #ffffff;
+    -fx-background-radius: 16px;
+    -fx-border-color: #dde5ef;
+    -fx-border-radius: 16px;
+    -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.08), 18, 0.24, 0, 6);
+}
+
+.text-field,
+.password-field,
+.text-area,
+.combo-box-base {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #c6d3e2;
+    -fx-border-radius: 8px;
+    -fx-background-radius: 8px;
+    -fx-padding: 6px 10px;
+}
+
+.text-field:focused,
+.password-field:focused,
+.text-area:focused,
+.combo-box-base:focused {
+    -fx-border-color: #0b5f72;
+    -fx-effect: dropshadow(gaussian, rgba(11,95,114,0.2), 10, 0.2, 0, 2);
+}
+
+.tab-pane {
+    -fx-background-color: transparent;
+}
+
+.tab-pane .tab-header-area {
+    -fx-padding: 0 0 12px 0;
+}
+
+.tab-pane .tab {
+    -fx-background-color: #e6edf5;
+    -fx-background-radius: 10px 10px 0 0;
+    -fx-padding: 6px 14px;
+}
+
+.tab-pane .tab:selected {
+    -fx-background-color: #ffffff;
+    -fx-background-insets: 0;
+}
+
+.primary-button {
+    -fx-background-color: #0b5f72;
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: 600;
+    -fx-background-radius: 10px;
+    -fx-padding: 10px 18px;
+}
+
+.primary-button:hover {
+    -fx-background-color: #0a5262;
+}
+
+.secondary-button {
+    -fx-background-color: #e8eef6;
+    -fx-text-fill: #0b2134;
+    -fx-font-weight: 600;
+    -fx-background-radius: 10px;
+    -fx-padding: 8px 16px;
+}
+
+.secondary-button:hover {
+    -fx-background-color: #dde6f1;
+}
+
+.danger-button {
+    -fx-background-color: #c94949;
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: 600;
+    -fx-background-radius: 10px;
+    -fx-padding: 8px 16px;
+}
+
+.danger-button:hover {
+    -fx-background-color: #b34040;
+}
+
+.form-message {
+    -fx-font-size: 12px;
+}
+
+.success-text {
+    -fx-text-fill: #1d8a3a;
+}
+
+.error-text {
+    -fx-text-fill: #c23a34;
+}
+
+.table-view {
+    -fx-background-color: transparent;
+    -fx-border-color: #d3dcea;
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+    -fx-padding: 4px;
+}
+
+.table-view .column-header-background {
+    -fx-background-color: #e3ebf3;
+    -fx-background-radius: 12px 12px 0 0;
+}
+
+.table-view .column-header .label {
+    -fx-text-fill: #0b2134;
+    -fx-font-weight: 600;
+}
+
+.table-row-cell {
+    -fx-cell-size: 34px;
+    -fx-background-color: #ffffff;
+}
+
+.table-row-cell:odd {
+    -fx-background-color: #f4f7fb;
+}
+
+.table-row-cell:filled:selected {
+    -fx-background-color: #d4e6ee;
+}
+
+.table-row-cell:filled:selected .text {
+    -fx-fill: #0b2134;
+}
+
+.table-cell {
+    -fx-text-fill: #1a2937;
+    -fx-padding: 0 10px 0 10px;
+}
+
+.table-cell:filled:selected {
+    -fx-text-fill: #0b2134;
+}
+
+.table-row-cell:filled:hover {
+    -fx-background-color: #eaf1f7;
+}
+
+.table-view .placeholder .label {
+    -fx-text-fill: #58697e;
+}
+
+.clickable-card {
+    -fx-cursor: hand;
+}
+
+.clickable-card:hover {
+    -fx-border-color: #77bcc7;
+    -fx-background-color: #f0f8fb;
+}
+
+.dialog-pane {
+    -fx-background-color: #eef2f6;
+}
+
+.dialog-pane .header-panel {
+    -fx-background-color: #e3ebf3;
+}
+
+/* Visual richness helpers */
+.separator *.line {
+    -fx-border-color: #e0e7f1;
+    -fx-border-width: 1;
+}
+
+.subtle-panel {
+    -fx-background-color: #f7f9fc;
+    -fx-background-radius: 14px;
+    -fx-border-color: #e1e7f0;
+    -fx-border-radius: 14px;
+    -fx-padding: 16px 18px;
+}
+
+.accent-bar {
+    -fx-background-color: #0b5f72;
+    -fx-background-radius: 6px;
+}
+
+.status-pill {
+    -fx-background-color: #e3edf3;
+    -fx-text-fill: #0b4860;
+    -fx-font-size: 11px;
+    -fx-font-weight: 600;
+    -fx-padding: 3px 10px;
+    -fx-background-radius: 999px;
+}
+
+.status-pill.success {
+    -fx-background-color: #e3f3e8;
+    -fx-text-fill: #1d7a3a;
+}
+
+.status-pill.warn {
+    -fx-background-color: #fff0d9;
+    -fx-text-fill: #8c5a18;
+}
+
+.status-pill.info {
+    -fx-background-color: #e6eef9;
+    -fx-text-fill: #245081;
+}
+
+.toolbar-chip {
+    -fx-background-color: #f0f4f8;
+    -fx-text-fill: #324457;
+    -fx-font-size: 11.5px;
+    -fx-padding: 4px 10px;
+    -fx-background-radius: 8px;
+    -fx-border-color: #dde5ef;
+    -fx-border-radius: 8px;
+}
+
+.table-view:focused {
+    -fx-border-color: #b8ccd9;
+    -fx-effect: dropshadow(gaussian, rgba(11,95,114,0.16), 10, 0.2, 0, 2);
+}
+
+.table-row-cell .text {
+    -fx-font-smoothing-type: lcd;
+}
+
+.button:focused {
+    -fx-effect: dropshadow(gaussian, rgba(11,95,114,0.18), 10, 0.2, 0, 2);
+}
+
+.card .label,
+.portal-card .label {
+    -fx-text-fill: #1b2b3c;
+}
