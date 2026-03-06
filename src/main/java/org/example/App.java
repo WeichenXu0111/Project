@@ -6,14 +6,20 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
 import javafx.collections.transformation.SortedList;
+import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.example.data.DataStore;
 import org.example.model.AuthorDraft;
 import org.example.model.Book;
@@ -22,10 +28,12 @@ import org.example.model.Role;
 import org.example.model.User;
 
 import java.awt.Desktop;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -74,6 +82,11 @@ public class App extends Application {
         VBox brand = new VBox(2, title, subtitle);
         brand.getStyleClass().add("brand-block");
 
+        ImageView logoView = buildLogoView();
+        HBox brandRow = logoView == null ? new HBox(brand) : new HBox(12, logoView, brand);
+        brandRow.setAlignment(Pos.CENTER_LEFT);
+        brandRow.getStyleClass().add("brand-row");
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
@@ -91,11 +104,36 @@ public class App extends Application {
             root.setCenter(buildLanding());
         });
 
-        HBox header = new HBox(16, brand, spacer, home, logout);
+        HBox header = new HBox(16, brandRow, spacer, home, logout);
         header.setAlignment(Pos.CENTER_LEFT);
         header.setPadding(new Insets(16, 28, 16, 28));
         header.getStyleClass().add("app-header");
         return header;
+    }
+
+    private ImageView buildLogoView() {
+        Image logo = loadLogoImage();
+        if (logo == null) {
+            return null;
+        }
+        ImageView view = new ImageView(logo);
+        view.getStyleClass().add("brand-logo");
+        view.setFitHeight(52);
+        view.setPreserveRatio(true);
+        view.setSmooth(true);
+        return view;
+    }
+
+    private Image loadLogoImage() {
+        URL resource = getClass().getResource("/logo.png");
+        if (resource != null) {
+            return new Image(resource.toExternalForm());
+        }
+        File fallback = new File("logo.png");
+        if (fallback.exists()) {
+            return new Image(fallback.toURI().toString());
+        }
+        return null;
     }
 
     private VBox buildLanding() {
@@ -665,15 +703,79 @@ public class App extends Application {
     }
 
     private void showQuickPreviewDialog(Book book) {
+        String filePath = book.getFilePath();
+        if (filePath != null && filePath.toLowerCase().endsWith(".pdf")) {
+            showPdfPreviewDialog(book);
+            return;
+        }
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Quick Preview");
         alert.setHeaderText(book.getTitle());
-        TextArea area = new TextArea(readPreviewText(book.getFilePath(), 30));
+        TextArea area = new TextArea(readPreviewText(filePath, 30));
         area.setWrapText(true);
         area.setEditable(false);
         area.setPrefRowCount(12);
         alert.getDialogPane().setContent(area);
         alert.showAndWait();
+    }
+
+    private void showPdfPreviewDialog(Book book) {
+        String filePath = book.getFilePath();
+        if (filePath == null || filePath.isBlank() || filePath.startsWith("seed://")) {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION, "This item has no local PDF attached.");
+            alert.showAndWait();
+            return;
+        }
+        List<Image> pages = renderPdfPreview(filePath, 3);
+        if (pages.isEmpty()) {
+            Alert alert = new Alert(Alert.AlertType.ERROR, "Unable to render PDF preview. Please open the file directly.");
+            alert.showAndWait();
+            return;
+        }
+
+        Pagination pagination = new Pagination(pages.size(), 0);
+        pagination.setPageFactory(index -> {
+            Image image = pages.get(index);
+            ImageView view = new ImageView(image);
+            view.setPreserveRatio(true);
+            view.setFitWidth(560);
+            ScrollPane scroll = new ScrollPane(view);
+            scroll.setFitToWidth(true);
+            scroll.setPannable(true);
+            scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+            scroll.getStyleClass().add("page-scroll");
+            return scroll;
+        });
+
+        VBox content = new VBox(10, pagination, new Label("Showing first " + pages.size() + " pages"));
+        content.setPadding(new Insets(8));
+
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("PDF Preview");
+        alert.setHeaderText(book.getTitle());
+        alert.getDialogPane().setContent(content);
+        alert.getDialogPane().setMinHeight(420);
+        alert.getDialogPane().setMinWidth(620);
+        alert.showAndWait();
+    }
+
+    private List<Image> renderPdfPreview(String filePath, int maxPages) {
+        Path path = Path.of(filePath);
+        if (!Files.exists(path)) {
+            return List.of();
+        }
+        List<Image> images = new ArrayList<>();
+        try (PDDocument document = PDDocument.load(path.toFile())) {
+            PDFRenderer renderer = new PDFRenderer(document);
+            int pageCount = Math.min(document.getNumberOfPages(), maxPages);
+            for (int i = 0; i < pageCount; i++) {
+                BufferedImage buffered = renderer.renderImageWithDPI(i, 140, ImageType.RGB);
+                images.add(SwingFXUtils.toFXImage(buffered, null));
+            }
+        } catch (IOException ex) {
+            return List.of();
+        }
+        return images;
     }
 
     private String readPreviewText(String filePath, int maxLines) {

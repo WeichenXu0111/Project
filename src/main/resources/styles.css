@@ -25,6 +25,10 @@
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.14), 18, 0.22, 0, 6);
 }
 
+.brand-logo {
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.18), 8, 0.2, 0, 2);
+}
+
 .app-title {
     -fx-text-fill: #ffffff;
     -fx-font-size: 20px;
