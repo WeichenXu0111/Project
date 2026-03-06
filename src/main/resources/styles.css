@@ -94,21 +94,11 @@
     -fx-text-fill: #0b2134;
 }
 
-.card {
-    -fx-background-color: #ffffff;
-    -fx-background-radius: 16px;
-    -fx-padding: 24px;
-    -fx-border-color: #dde5ef;
-    -fx-border-radius: 16px;
-    -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.08), 18, 0.24, 0, 6);
-}
-
+.card,
 .portal-card {
     -fx-background-color: #ffffff;
-    -fx-background-radius: 16px;
-    -fx-border-color: #dde5ef;
-    -fx-border-radius: 16px;
-    -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.08), 18, 0.24, 0, 6);
+    -fx-border-color: #dbe5f0;
+    -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.06), 14, 0.2, 0, 4);
 }
 
 .text-field,
@@ -206,8 +196,7 @@
 }
 
 .table-view .column-header-background {
-    -fx-background-color: #ffffff;
-    -fx-background-radius: 12px 12px 0 0;
+    -fx-background-color: #f7f9fc;
 }
 
 .table-view .column-header {
@@ -227,7 +216,7 @@
 }
 
 .table-row-cell:odd {
-    -fx-background-color: #f4f7fb;
+    -fx-background-color: #f8fafc;
 }
 
 .table-row-cell:filled:selected {
@@ -380,4 +369,69 @@
 .card .label,
 .portal-card .label {
     -fx-text-fill: #1b2b3c;
+}
+
+.table-row-cell.unavailable-row {
+    -fx-background-color: #f6e9e9;
+}
+
+.table-cell.unavailable-title {
+    -fx-text-fill: #8a2f2f;
+    -fx-font-weight: 600;
+}
+
+.filter-row {
+    -fx-padding: 6px 0 2px 0;
+}
+
+.chip {
+    -fx-background-color: #eef3f8;
+    -fx-padding: 4px 10px;
+    -fx-background-radius: 999px;
+    -fx-border-color: #d7e1ea;
+    -fx-border-radius: 999px;
+}
+
+.recommendation-list {
+    -fx-background-color: transparent;
+    -fx-border-color: #d3dcea;
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+}
+
+.recommendation-list .list-cell {
+    -fx-background-color: #ffffff;
+    -fx-padding: 10px 12px;
+}
+
+.recommendation-list .list-cell:filled:selected {
+    -fx-background-color: #e3edf3;
+}
+
+.recommendation-list .list-cell:filled:hover {
+    -fx-background-color: #f0f6fb;
+}
+
+/* Scroll container for long pages */
+.page-scroll {
+    -fx-background-color: transparent;
+    -fx-padding: 0 0 12px 0;
+}
+
+.page-scroll .viewport {
+    -fx-background-color: transparent;
+}
+
+.page-scroll .scroll-bar:vertical {
+    -fx-pref-width: 10px;
+}
+
+.page-scroll .scroll-bar:vertical .thumb {
+    -fx-background-color: rgba(15, 70, 92, 0.35);
+    -fx-background-radius: 999px;
+}
+
+.page-scroll .scroll-bar:vertical .track {
+    -fx-background-color: rgba(15, 70, 92, 0.08);
+    -fx-background-radius: 999px;
 }

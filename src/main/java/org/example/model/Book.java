@@ -3,6 +3,8 @@ package org.example.model;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class Book implements Serializable {
@@ -14,13 +16,16 @@ public class Book implements Serializable {
     private String authorUsername;
     private String authorFullName;
     private String genre;
+    private List<String> genres = new ArrayList<>();
     private String description;
     private String filePath;
     private LocalDate submittedDate;
     private LocalDate approvedDate;
     private LocalDate borrowedDate;
+    private LocalDate dueDate;
     private BookStatus status;
     private String borrowedBy;
+    private int borrowCount;
 
     public Book(String title,
                 String authorUsername,
@@ -28,11 +33,20 @@ public class Book implements Serializable {
                 String genre,
                 String description,
                 String filePath) {
+        this(title, authorUsername, authorFullName, genre == null ? List.of() : List.of(genre), description, filePath);
+    }
+
+    public Book(String title,
+                String authorUsername,
+                String authorFullName,
+                List<String> genres,
+                String description,
+                String filePath) {
         this.id = UUID.randomUUID().toString();
         this.title = title;
         this.authorUsername = authorUsername;
         this.authorFullName = authorFullName;
-        this.genre = genre;
+        setGenresInternal(genres);
         this.description = description;
         this.filePath = filePath;
         this.submittedDate = LocalDate.now();
@@ -56,7 +70,27 @@ public class Book implements Serializable {
     }
 
     public String getGenre() {
-        return genre;
+        if (genre != null && !genre.isBlank()) {
+            return genre;
+        }
+        if (genres != null && !genres.isEmpty()) {
+            return String.join(" / ", genres);
+        }
+        return "";
+    }
+
+    public List<String> getGenres() {
+        if (genres != null && !genres.isEmpty()) {
+            return new ArrayList<>(genres);
+        }
+        if (genre != null && !genre.isBlank()) {
+            return List.of(genre);
+        }
+        return new ArrayList<>();
+    }
+
+    public String getGenreDisplay() {
+        return getGenre();
     }
 
     public String getDescription() {
@@ -79,12 +113,20 @@ public class Book implements Serializable {
         return borrowedDate;
     }
 
+    public LocalDate getDueDate() {
+        return dueDate;
+    }
+
     public BookStatus getStatus() {
         return status;
     }
 
     public String getBorrowedBy() {
         return borrowedBy;
+    }
+
+    public int getBorrowCount() {
+        return borrowCount;
     }
 
     public void approve() {
@@ -108,5 +150,19 @@ public class Book implements Serializable {
         status = BookStatus.BORROWED;
         borrowedBy = username;
         borrowedDate = LocalDate.now();
+        dueDate = borrowedDate.plusDays(14);
+        borrowCount++;
+    }
+
+    private void setGenresInternal(List<String> newGenres) {
+        genres = new ArrayList<>();
+        if (newGenres != null) {
+            for (String item : newGenres) {
+                if (item != null && !item.isBlank()) {
+                    genres.add(item.trim());
+                }
+            }
+        }
+        genre = genres.isEmpty() ? null : String.join(" / ", genres);
     }
 }

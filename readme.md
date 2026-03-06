@@ -279,4 +279,38 @@ In this task, you need to manage the librarian’s access and screens related to
 
 ## Phase 1 – Nice to have Features
 
-As announced, there will be some nice-to-have features from the crazy customer. These features for phase 1 will be released 1 week before the deadline of phase 1.
+For Task 1.1, 2.1, 3.1:
+
+Following requirements need to be checked when user is registering into system.
+
+Username: Check if the username is unique across all types of users (student, staff, author, librarian). If not unique show error message.
+Full Name: Check if Full Name is empty or not, if left blank show error message
+Password: Check if the password is strong or weak or empty. Show error messages if necessary.
+Search online what is the standard password limit and criteria used mostly and implement accordingly.
+
+For Task 1.2, 2.2, 3.2:
+
+Following requirement needs to be checked when user is login into system.
+
+Username: Check if the user belongs to this user type. For example, a student should not be able to login into staff account since username is unique. Show appropriate error message.
+
+For Task 1.3:
+
+Search and Filter Books: Allow users to find books faster as the library grows. Users can search by title, author; filter by genre, publish date, availability.
+Quick Review: Allow user to quickly review book content before user borrow the book for reading. For example, show first few pages for quick review. Or any other reasonable approach is also fine
+Reading Summary: Allow user to read the book description (summary/abstract) before user borrow the book for reading. If Summary is too long pop-up a screen for quick read the summary.
+Book Recommendations: Suggest books based on borrowing history or popular titles (for example count the times borrowed for each book by all users OR use some LLM model to recommend a book based on book content). You can also consider other logical factors for book recommendations.
+For Task 1.4:
+
+Borrow Confirmation with Details: Before finalizing the borrow, show a confirmation dialog displaying the selected book(s), borrow duration, due date, and any applicable limits or warnings.
+Book Availability: Mark books title with red or black based on their availability in the searching result and only allow users to borrow available books.
+
+For Task 2.3:
+
+Book Preview: Provide a preview functionality where authors can view a formatted summary of their book details (title, genre, description) before final submission.
+Multiple Genre Selection: Enable authors to select multiple genres for a book from a predefined list, improving categorization and future searchability.
+Auto-Save Draft: Implement an auto-save feature for the publication form, allowing authors to resume incomplete submissions later without losing data.
+
+For Task 3.3:
+
+Book Content Review: Allow librarians to preview or download the uploaded book file directly from the approval screen before deciding to approve or reject.

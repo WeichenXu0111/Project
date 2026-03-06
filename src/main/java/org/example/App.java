@@ -1,6 +1,11 @@
 package org.example;
 
+import javafx.animation.PauseTransition;
 import javafx.application.Application;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
+import javafx.collections.transformation.SortedList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -8,15 +13,27 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import org.example.data.DataStore;
+import org.example.model.AuthorDraft;
 import org.example.model.Book;
 import org.example.model.BookStatus;
 import org.example.model.Role;
 import org.example.model.User;
 
+import java.awt.Desktop;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 public class App extends Application {
     private final DataStore dataStore = new DataStore();
@@ -309,25 +326,54 @@ public class App extends Application {
                 buildStatCard("Access Level", currentUser.getRole().getDisplayName(), "accent-slate")
         );
 
-        TableView<Book> availableTable = buildAvailableBooksTable();
-        TableView<Book> borrowedTable = buildBorrowedBooksTable();
+        ObservableList<Book> catalog = dataStore.getCatalogBooks();
+        FilteredList<Book> filtered = new FilteredList<>(catalog, book -> true);
 
-        Label availableTitle = new Label("Available Books");
+        TableView<Book> availableTable = buildAvailableBooksTable();
+        SortedList<Book> sorted = new SortedList<>(filtered);
+        sorted.comparatorProperty().bind(availableTable.comparatorProperty());
+        availableTable.setItems(sorted);
+
+        ObservableList<Book> recommendationItems = FXCollections.observableArrayList(
+                dataStore.getRecommendations(currentUser.getUsername(), 6)
+        );
+        Runnable refreshRecommendations = () -> recommendationItems.setAll(
+                dataStore.getRecommendations(currentUser.getUsername(), 6)
+        );
+
+        VBox filters = buildCatalogFilters(filtered);
+        VBox availableActions = buildAvailableActions(availableTable, refreshRecommendations);
+
+        Label availableTitle = new Label("Catalog & Availability");
         availableTitle.getStyleClass().add("card-title");
-        VBox left = new VBox(12, availableTitle, availableTable, buildBorrowActions(availableTable));
+        VBox left = new VBox(12, availableTitle, filters, availableTable, availableActions);
         left.getStyleClass().add("card");
         left.setPadding(new Insets(16));
 
+        TableView<Book> borrowedTable = buildBorrowedBooksTable();
         Label borrowedTitle = new Label("My Borrowed Books");
         borrowedTitle.getStyleClass().add("card-title");
-        VBox right = new VBox(12, borrowedTitle, borrowedTable);
-        right.getStyleClass().add("card");
-        right.setPadding(new Insets(16));
+        VBox borrowedCard = new VBox(12, borrowedTitle, borrowedTable);
+        borrowedCard.getStyleClass().add("card");
+        borrowedCard.setPadding(new Insets(16));
+
+        ListView<Book> recommendations = buildRecommendationList(recommendationItems, availableTable);
+        Button refreshRec = new Button("Refresh Recommendations");
+        refreshRec.getStyleClass().add("secondary-button");
+        refreshRec.setOnAction(event -> refreshRecommendations.run());
+
+        Label recTitle = new Label("Recommended for You");
+        recTitle.getStyleClass().add("card-title");
+        VBox recCard = new VBox(12, recTitle, recommendations, refreshRec);
+        recCard.getStyleClass().add("card");
+        recCard.setPadding(new Insets(16));
+
+        VBox right = new VBox(16, borrowedCard, recCard);
+        HBox.setHgrow(left, Priority.ALWAYS);
+        HBox.setHgrow(right, Priority.NEVER);
 
         HBox content = new HBox(16, left, right);
         content.setPadding(new Insets(24));
-        HBox.setHgrow(left, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
 
         VBox body = new VBox(16, stats, content);
         body.setPadding(new Insets(0, 24, 24, 24));
@@ -341,13 +387,41 @@ public class App extends Application {
 
     private TableView<Book> buildAvailableBooksTable() {
         TableView<Book> table = new TableView<>();
-        table.setItems(dataStore.getAvailableBooks());
+        TableColumn<Book, String> titleColumn = buildColumn("Title", Book::getTitle, 170);
+        titleColumn.setCellFactory(column -> new TableCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                getStyleClass().remove("unavailable-title");
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item);
+                    Book book = getTableRow() == null ? null : getTableRow().getItem();
+                    if (book != null && !book.isAvailable()) {
+                        getStyleClass().add("unavailable-title");
+                    }
+                }
+            }
+        });
+
+        table.setRowFactory(tv -> new TableRow<>() {
+            @Override
+            protected void updateItem(Book item, boolean empty) {
+                super.updateItem(item, empty);
+                getStyleClass().remove("unavailable-row");
+                if (!empty && item != null && !item.isAvailable()) {
+                    getStyleClass().add("unavailable-row");
+                }
+            }
+        });
+
         table.getColumns().addAll(
-                buildColumn("Title", Book::getTitle, 160),
+                titleColumn,
                 buildColumn("Author", Book::getAuthorFullName, 140),
-                buildColumn("Genre", Book::getGenre, 100),
+                buildColumn("Genres", Book::getGenre, 120),
                 buildColumn("Publish Date", book -> formatDate(book.getApprovedDate()), 120),
-                buildColumn("Status", book -> book.getStatus().getDisplayName(), 120),
+                buildColumn("Status", book -> book.getStatus().getDisplayName(), 130),
                 buildColumn("Summary", Book::getDescription, 280)
         );
         table.setPlaceholder(new Label("No approved books yet."));
@@ -361,7 +435,8 @@ public class App extends Application {
         table.getColumns().addAll(
                 buildColumn("Title", Book::getTitle, 180),
                 buildColumn("Author", Book::getAuthorFullName, 160),
-                buildColumn("Borrowed Date", book -> formatDate(book.getBorrowedDate()), 140)
+                buildColumn("Borrowed Date", book -> formatDate(book.getBorrowedDate()), 130),
+                buildColumn("Due Date", book -> formatDate(book.getDueDate()), 120)
         );
         table.setPlaceholder(new Label("You have not borrowed any books."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
@@ -394,6 +469,259 @@ public class App extends Application {
         return new VBox(8, borrow, message);
     }
 
+    private VBox buildAvailableActions(TableView<Book> table, Runnable onBorrowSuccess) {
+        Label message = new Label();
+        message.getStyleClass().add("form-message");
+
+        Button preview = new Button("Quick Preview");
+        preview.getStyleClass().add("secondary-button");
+        preview.setOnAction(event -> {
+            Book selected = table.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                message.setText("Please select a book to preview.");
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            showQuickPreviewDialog(selected);
+        });
+
+        Button summary = new Button("Read Summary");
+        summary.getStyleClass().add("secondary-button");
+        summary.setOnAction(event -> {
+            Book selected = table.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                message.setText("Please select a book to read its summary.");
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            showSummaryDialog(selected);
+        });
+
+        Button borrow = new Button("Borrow Selected Book");
+        borrow.getStyleClass().add("primary-button");
+        borrow.setOnAction(event -> {
+            Book selected = table.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                message.setText("Please select a book to borrow.");
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            if (!selected.isAvailable()) {
+                message.setText("This book is not available right now.");
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            if (!showBorrowConfirmation(selected)) {
+                return;
+            }
+            DataStore.ActionResult result = dataStore.borrowBook(selected.getId(), currentUser.getUsername());
+            if (!result.success()) {
+                message.setText(result.message());
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            if (onBorrowSuccess != null) {
+                onBorrowSuccess.run();
+            }
+            message.setText("Book borrowed successfully.");
+            message.getStyleClass().setAll("form-message", "success-text");
+        });
+
+        HBox actions = new HBox(10, preview, summary, borrow);
+        actions.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(8, actions, message);
+    }
+
+    private VBox buildCatalogFilters(FilteredList<Book> filtered) {
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search title or author...");
+
+        ComboBox<String> genreBox = new ComboBox<>();
+        genreBox.getItems().add("All Genres");
+        genreBox.getItems().addAll(dataStore.getGenreOptions());
+        genreBox.getSelectionModel().selectFirst();
+
+        ComboBox<String> availabilityBox = new ComboBox<>();
+        availabilityBox.getItems().addAll("All", "Available", "Borrowed");
+        availabilityBox.getSelectionModel().selectFirst();
+
+        DatePicker publishDate = new DatePicker();
+        publishDate.setPromptText("Publish date");
+
+        Runnable applyFilter = () -> filtered.setPredicate(book -> {
+            if (book == null) {
+                return false;
+            }
+            String search = searchField.getText() == null ? "" : searchField.getText().trim().toLowerCase();
+            if (!search.isEmpty()) {
+                String title = book.getTitle() == null ? "" : book.getTitle().toLowerCase();
+                String author = book.getAuthorFullName() == null ? "" : book.getAuthorFullName().toLowerCase();
+                if (!title.contains(search) && !author.contains(search)) {
+                    return false;
+                }
+            }
+            String genre = genreBox.getValue();
+            if (genre != null && !"All Genres".equals(genre)) {
+                boolean match = book.getGenres().stream().anyMatch(item -> item.equalsIgnoreCase(genre));
+                if (!match) {
+                    return false;
+                }
+            }
+            String availability = availabilityBox.getValue();
+            if ("Available".equals(availability) && !book.isAvailable()) {
+                return false;
+            }
+            if ("Borrowed".equals(availability) && book.isAvailable()) {
+                return false;
+            }
+            LocalDate filterDate = publishDate.getValue();
+            if (filterDate != null) {
+                LocalDate approved = book.getApprovedDate();
+                if (approved == null || !approved.equals(filterDate)) {
+                    return false;
+                }
+            }
+            return true;
+        });
+
+        searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
+        genreBox.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
+        availabilityBox.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
+        publishDate.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
+
+        Button clear = new Button("Clear Filters");
+        clear.getStyleClass().add("ghost-button");
+        clear.setOnAction(event -> {
+            searchField.clear();
+            genreBox.getSelectionModel().selectFirst();
+            availabilityBox.getSelectionModel().selectFirst();
+            publishDate.setValue(null);
+            applyFilter.run();
+        });
+
+        HBox row = new HBox(10, searchField, genreBox, availabilityBox, publishDate, clear);
+        row.getStyleClass().add("filter-row");
+        HBox.setHgrow(searchField, Priority.ALWAYS);
+
+        Label hint = new Label("Filter by title, author, genre, publish date, and availability.");
+        hint.getStyleClass().add("muted-text");
+
+        return new VBox(8, row, hint);
+    }
+
+    private ListView<Book> buildRecommendationList(ObservableList<Book> items, TableView<Book> linkedTable) {
+        ListView<Book> listView = new ListView<>(items);
+        listView.getStyleClass().add("recommendation-list");
+        listView.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(Book item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+                Label title = new Label(item.getTitle());
+                title.getStyleClass().add("card-title");
+                Label meta = new Label(item.getAuthorFullName() + " • " + item.getGenreDisplay());
+                meta.getStyleClass().add("muted-text");
+                VBox box = new VBox(2, title, meta);
+                setGraphic(box);
+            }
+        });
+        listView.setOnMouseClicked(event -> {
+            Book selected = listView.getSelectionModel().getSelectedItem();
+            if (selected != null && linkedTable != null) {
+                linkedTable.getSelectionModel().select(selected);
+                linkedTable.scrollTo(selected);
+            }
+        });
+        return listView;
+    }
+
+    private boolean showBorrowConfirmation(Book book) {
+        LocalDate dueDate = LocalDate.now().plusDays(14);
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Borrow Confirmation");
+        alert.setHeaderText("Confirm borrowing this book?");
+        alert.setContentText("Title: " + book.getTitle()
+                + "\nBorrow duration: 14 days"
+                + "\nDue date: " + dueDate
+                + "\nAvailability: " + book.getStatus().getDisplayName());
+        Optional<ButtonType> result = alert.showAndWait();
+        return result.isPresent() && result.get() == ButtonType.OK;
+    }
+
+    private void showSummaryDialog(Book book) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Book Summary");
+        alert.setHeaderText(book.getTitle());
+        TextArea area = new TextArea(book.getDescription());
+        area.setWrapText(true);
+        area.setEditable(false);
+        area.setPrefRowCount(10);
+        alert.getDialogPane().setContent(area);
+        alert.showAndWait();
+    }
+
+    private void showQuickPreviewDialog(Book book) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Quick Preview");
+        alert.setHeaderText(book.getTitle());
+        TextArea area = new TextArea(readPreviewText(book.getFilePath(), 30));
+        area.setWrapText(true);
+        area.setEditable(false);
+        area.setPrefRowCount(12);
+        alert.getDialogPane().setContent(area);
+        alert.showAndWait();
+    }
+
+    private String readPreviewText(String filePath, int maxLines) {
+        if (filePath == null || filePath.isBlank() || filePath.startsWith("seed://")) {
+            return "No preview available for this item.";
+        }
+        Path path = Path.of(filePath);
+        if (!Files.exists(path)) {
+            return "File not found: " + filePath;
+        }
+        String lower = filePath.toLowerCase();
+        if (lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")) {
+            return "Preview not supported for this file type. Use Open File to view the document.";
+        }
+        StringBuilder builder = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new FileReader(path.toFile()))) {
+            String line;
+            int count = 0;
+            while ((line = reader.readLine()) != null && count < maxLines) {
+                builder.append(line).append("\n");
+                count++;
+            }
+        } catch (IOException ex) {
+            return "Unable to read preview: " + ex.getMessage();
+        }
+        String preview = builder.toString().trim();
+        return preview.isEmpty() ? "Preview is empty." : preview;
+    }
+
+    private void openBookFile(String filePath) {
+        if (filePath == null || filePath.isBlank() || filePath.startsWith("seed://")) {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION, "This item has no local file attached.");
+            alert.showAndWait();
+            return;
+        }
+        if (!Desktop.isDesktopSupported()) {
+            Alert alert = new Alert(Alert.AlertType.ERROR, "Desktop integration is not supported on this system.");
+            alert.showAndWait();
+            return;
+        }
+        try {
+            Desktop.getDesktop().open(Path.of(filePath).toFile());
+        } catch (IOException ex) {
+            Alert alert = new Alert(Alert.AlertType.ERROR, "Unable to open file: " + ex.getMessage());
+            alert.showAndWait();
+        }
+    }
+
     private BorderPane buildAuthorDashboard() {
         Label title = new Label("Author Dashboard");
         title.getStyleClass().add("section-title");
@@ -424,10 +752,15 @@ public class App extends Application {
         VBox body = new VBox(16, stats, content);
         body.setPadding(new Insets(0, 24, 24, 24));
 
+        ScrollPane scrollPane = new ScrollPane(body);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.getStyleClass().add("page-scroll");
+
         BorderPane layout = new BorderPane();
         layout.setTop(title);
         BorderPane.setMargin(title, new Insets(24, 24, 12, 24));
-        layout.setCenter(body);
+        layout.setCenter(scrollPane);
         return layout;
     }
 
@@ -435,17 +768,27 @@ public class App extends Application {
         Label formTitle = new Label("Publish New Book");
         formTitle.getStyleClass().add("card-title");
 
-        Label helper = new Label("Provide the details shown to students: title, genre, and summary. A book file is required for review.");
+        Label helper = new Label("Provide the details shown to students: title, genres, and summary. A book file is required for review.");
         helper.getStyleClass().add("muted-text");
         helper.setWrapText(true);
 
         TextField titleField = new TextField();
-        TextField genreField = new TextField();
         TextArea descriptionArea = new TextArea();
         descriptionArea.setPrefRowCount(5);
         descriptionArea.setWrapText(true);
         TextField fileField = new TextField();
         fileField.setEditable(false);
+
+        FlowPane genrePane = new FlowPane();
+        genrePane.setHgap(8);
+        genrePane.setVgap(6);
+        List<CheckBox> genreChecks = new ArrayList<>();
+        for (String genre : dataStore.getGenreOptions()) {
+            CheckBox checkBox = new CheckBox(genre);
+            checkBox.getStyleClass().add("chip");
+            genreChecks.add(checkBox);
+            genrePane.getChildren().add(checkBox);
+        }
 
         Button browse = new Button("Choose File");
         browse.getStyleClass().add("secondary-button");
@@ -458,27 +801,52 @@ public class App extends Application {
             }
         });
 
+        Label draftStatus = new Label("Draft not saved yet.");
+        draftStatus.getStyleClass().add("muted-text");
+
+        PauseTransition autoSave = new PauseTransition(Duration.seconds(2));
+        Runnable triggerSave = () -> {
+            autoSave.stop();
+            autoSave.playFromStart();
+        };
+        autoSave.setOnFinished(event -> {
+            AuthorDraft draft = buildDraftFromForm(titleField, descriptionArea, fileField, genreChecks);
+            dataStore.saveDraft(currentUser.getUsername(), draft);
+            draftStatus.setText("Draft auto-saved at " + formatDateTime(draft.getLastSaved()));
+        });
+
+        titleField.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
+        descriptionArea.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
+        fileField.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
+        genreChecks.forEach(checkBox -> checkBox.selectedProperty().addListener((obs, oldValue, newValue) -> triggerSave.run()));
+
         GridPane grid = buildFormGrid();
         grid.addRow(0, buildFormLabel("Book Title (shown in catalog)"), titleField);
         grid.addRow(1, buildFormLabel("Author Name (auto-filled)"), new Label(currentUser.getFullName()));
-        grid.addRow(2, buildFormLabel("Genre / Category"), genreField);
+        grid.addRow(2, buildFormLabel("Genres (multi-select)"), genrePane);
         grid.addRow(3, buildFormLabel("Summary (shown to readers)"), descriptionArea);
 
         HBox fileRow = new HBox(8, fileField, browse);
         HBox.setHgrow(fileField, Priority.ALWAYS);
         grid.addRow(4, buildFormLabel("Book File (PDF)"), fileRow);
 
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
+        Button preview = new Button("Preview Details");
+        preview.getStyleClass().add("secondary-button");
+        preview.setOnAction(event -> showAuthorPreviewDialog(titleField, descriptionArea, fileField, genreChecks));
 
         Button submit = new Button("Submit for Approval");
         submit.getStyleClass().add("primary-button");
+
+        Label message = new Label();
+        message.getStyleClass().add("form-message");
+
         submit.setOnAction(event -> {
+            List<String> genres = collectGenres(genreChecks);
             DataStore.ActionResult result = dataStore.submitBook(
                     titleField.getText().trim(),
                     currentUser.getUsername(),
                     currentUser.getFullName(),
-                    genreField.getText().trim(),
+                    genres,
                     descriptionArea.getText().trim(),
                     fileField.getText().trim()
             );
@@ -488,14 +856,19 @@ public class App extends Application {
                 return;
             }
             titleField.clear();
-            genreField.clear();
             descriptionArea.clear();
             fileField.clear();
+            genreChecks.forEach(checkBox -> checkBox.setSelected(false));
+            dataStore.clearDraft(currentUser.getUsername());
+            draftStatus.setText("Draft cleared after submission.");
             message.setText("Book submitted and pending librarian approval.");
             message.getStyleClass().setAll("form-message", "success-text");
         });
 
-        VBox form = new VBox(12, formTitle, helper, grid, submit, message);
+        loadDraftIntoForm(titleField, descriptionArea, fileField, genreChecks, draftStatus);
+
+        HBox buttons = new HBox(10, preview, submit);
+        VBox form = new VBox(12, formTitle, helper, grid, draftStatus, buttons, message);
         form.getStyleClass().add("card");
         form.setPadding(new Insets(16));
         form.setPrefWidth(420);
@@ -514,6 +887,73 @@ public class App extends Application {
         table.setPlaceholder(new Label("No submissions yet."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         return table;
+    }
+
+    private void loadDraftIntoForm(TextField titleField,
+                                   TextArea descriptionArea,
+                                   TextField fileField,
+                                   List<CheckBox> genreChecks,
+                                   Label draftStatus) {
+        AuthorDraft draft = dataStore.getDraft(currentUser.getUsername());
+        if (draft == null) {
+            return;
+        }
+        titleField.setText(draft.getTitle());
+        descriptionArea.setText(draft.getDescription());
+        fileField.setText(draft.getFilePath());
+        for (CheckBox checkBox : genreChecks) {
+            checkBox.setSelected(draft.getGenres().contains(checkBox.getText()));
+        }
+        if (draft.getLastSaved() != null) {
+            draftStatus.setText("Draft restored (saved at " + formatDateTime(draft.getLastSaved()) + ")");
+        }
+    }
+
+    private AuthorDraft buildDraftFromForm(TextField titleField,
+                                           TextArea descriptionArea,
+                                           TextField fileField,
+                                           List<CheckBox> genreChecks) {
+        AuthorDraft draft = new AuthorDraft();
+        draft.setTitle(titleField.getText().trim());
+        draft.setDescription(descriptionArea.getText().trim());
+        draft.setFilePath(fileField.getText().trim());
+        draft.setGenres(collectGenres(genreChecks));
+        return draft;
+    }
+
+    private List<String> collectGenres(List<CheckBox> genreChecks) {
+        List<String> genres = new ArrayList<>();
+        for (CheckBox checkBox : genreChecks) {
+            if (checkBox.isSelected()) {
+                genres.add(checkBox.getText());
+            }
+        }
+        return genres;
+    }
+
+    private void showAuthorPreviewDialog(TextField titleField,
+                                         TextArea descriptionArea,
+                                         TextField fileField,
+                                         List<CheckBox> genreChecks) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Preview Book Details");
+        alert.setHeaderText("Confirm your submission details");
+        String title = titleField.getText().trim();
+        String description = descriptionArea.getText().trim();
+        String filePath = fileField.getText().trim();
+        String genres = String.join(" / ", collectGenres(genreChecks));
+        TextArea area = new TextArea(
+                "Title: " + title
+                        + "\nAuthor: " + currentUser.getFullName()
+                        + "\nGenres: " + (genres.isBlank() ? "(none)" : genres)
+                        + "\nFile: " + (filePath.isBlank() ? "(not selected)" : filePath)
+                        + "\n\nSummary:\n" + description
+        );
+        area.setWrapText(true);
+        area.setEditable(false);
+        area.setPrefRowCount(12);
+        alert.getDialogPane().setContent(area);
+        alert.showAndWait();
     }
 
     private BorderPane buildLibrarianDashboard() {
@@ -575,6 +1015,30 @@ public class App extends Application {
         Label message = new Label();
         message.getStyleClass().add("form-message");
 
+        Button preview = new Button("Preview File");
+        preview.getStyleClass().add("secondary-button");
+        preview.setOnAction(event -> {
+            Book selected = table.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                message.setText("Please select a submission first.");
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            showQuickPreviewDialog(selected);
+        });
+
+        Button openFile = new Button("Open File");
+        openFile.getStyleClass().add("secondary-button");
+        openFile.setOnAction(event -> {
+            Book selected = table.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                message.setText("Please select a submission first.");
+                message.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            openBookFile(selected.getFilePath());
+        });
+
         Button approve = new Button("Approve");
         Button reject = new Button("Reject");
         approve.getStyleClass().add("primary-button");
@@ -583,7 +1047,7 @@ public class App extends Application {
         approve.setOnAction(event -> handleApproval(table, true, message));
         reject.setOnAction(event -> handleApproval(table, false, message));
 
-        HBox buttons = new HBox(12, approve, reject);
+        HBox buttons = new HBox(12, preview, openFile, approve, reject);
         return new VBox(8, buttons, message);
     }
 
@@ -649,6 +1113,13 @@ public class App extends Application {
 
     private String formatDate(LocalDate date) {
         return date == null ? "-" : date.toString();
+    }
+
+    private String formatDateTime(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return "-";
+        }
+        return dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
     private HBox buildStatsRow(VBox... cards) {

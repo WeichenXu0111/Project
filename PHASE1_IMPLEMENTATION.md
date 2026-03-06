@@ -78,3 +78,19 @@ This document summarizes what was built to satisfy Phase 1 requirements in `read
 - Test: `PasswordUtilTest`.
 - Setup instructions: `README_PHASE1.md`.
 
+## 8. Phase 1 Nice-to-Have Features
+
+### Student/Staff
+- Added catalog search by title/author and filters for genre, publish date, availability.
+- Quick preview dialog shows first lines of supported text files.
+- Summary dialog allows full abstract reading before borrowing.
+- Borrow confirmation displays duration and due date.
+- Recommendations panel suggests popular or history-based books.
+
+### Author
+- Multi-genre selection with predefined genre list.
+- Preview dialog shows a formatted summary before submission.
+- Auto-save draft restores unfinished work between sessions.
+
+### Librarian
+- Preview and open book files directly from pending approval screen.

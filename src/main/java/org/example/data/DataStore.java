@@ -6,20 +6,42 @@ import org.example.model.Book;
 import org.example.model.BookStatus;
 import org.example.model.Role;
 import org.example.model.User;
+import org.example.model.AuthorDraft;
 import org.example.security.PasswordUtil;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class DataStore {
     private static final String DATA_DIR = "data";
     private static final String DATA_FILE = "lms-data.dat";
+
+    private static final List<String> GENRE_OPTIONS = List.of(
+            "Computer Science",
+            "Software Engineering",
+            "Artificial Intelligence",
+            "Data Science",
+            "Database",
+            "Networking",
+            "Programming",
+            "Mathematics",
+            "Cloud Computing",
+            "Security",
+            "Graphics",
+            "Distributed Computing",
+            "DevOps",
+            "HCI",
+            "Technology"
+    );
 
     private final List<User> users = new ArrayList<>();
     private final List<Book> books = new ArrayList<>();
@@ -29,6 +51,11 @@ public class DataStore {
     private final ObservableList<Book> authorBooks = FXCollections.observableArrayList();
     private final ObservableList<Book> borrowedBooks = FXCollections.observableArrayList();
     private final ObservableList<User> usersView = FXCollections.observableArrayList();
+    private final ObservableList<Book> catalogBooks = FXCollections.observableArrayList();
+    private final ObservableList<Book> approvedBooks = FXCollections.observableArrayList();
+    private final ObservableList<Book> rejectedBooks = FXCollections.observableArrayList();
+
+    private final Map<String, AuthorDraft> drafts = new HashMap<>();
 
     public record RegistrationResult(boolean success, String message) {
     }
@@ -47,8 +74,15 @@ public class DataStore {
         try (ObjectInputStream input = new ObjectInputStream(new FileInputStream(dataPath.toFile()))) {
             Object userObj = input.readObject();
             Object bookObj = input.readObject();
+            Object draftObj = null;
+            try {
+                draftObj = input.readObject();
+            } catch (EOFException ignored) {
+                draftObj = null;
+            }
             users.clear();
             books.clear();
+            drafts.clear();
             if (userObj instanceof List<?>) {
                 for (Object item : (List<?>) userObj) {
                     if (item instanceof User user) {
@@ -60,6 +94,13 @@ public class DataStore {
                 for (Object item : (List<?>) bookObj) {
                     if (item instanceof Book book) {
                         books.add(book);
+                    }
+                }
+            }
+            if (draftObj instanceof Map<?, ?> map) {
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() instanceof String key && entry.getValue() instanceof AuthorDraft draft) {
+                        drafts.put(key, draft);
                     }
                 }
             }
@@ -81,6 +122,7 @@ public class DataStore {
         try (ObjectOutputStream output = new ObjectOutputStream(new FileOutputStream(dataPath.toFile()))) {
             output.writeObject(new ArrayList<>(users));
             output.writeObject(new ArrayList<>(books));
+            output.writeObject(new HashMap<>(drafts));
         } catch (IOException ignored) {
         }
     }
@@ -97,8 +139,9 @@ public class DataStore {
         if (fullName == null || fullName.isBlank()) {
             return new RegistrationResult(false, "Full name is required.");
         }
-        if (password == null || password.length() < 8) {
-            return new RegistrationResult(false, "Password must be at least 8 characters.");
+        String passwordError = validatePassword(password);
+        if (passwordError != null) {
+            return new RegistrationResult(false, passwordError);
         }
         if (role == null) {
             return new RegistrationResult(false, "Role is required.");
@@ -137,6 +180,21 @@ public class DataStore {
         return availableBooks;
     }
 
+    public ObservableList<Book> getCatalogBooks() {
+        refreshViews();
+        return catalogBooks;
+    }
+
+    public ObservableList<Book> getApprovedBooks() {
+        refreshViews();
+        return approvedBooks;
+    }
+
+    public ObservableList<Book> getRejectedBooks() {
+        refreshViews();
+        return rejectedBooks;
+    }
+
     public ObservableList<Book> getPendingBooks() {
         refreshViews();
         return pendingBooks;
@@ -163,17 +221,58 @@ public class DataStore {
         return usersView;
     }
 
+    public List<Book> getPopularBooks(int limit) {
+        refreshViews();
+        return books.stream()
+                .filter(book -> book.getStatus() == BookStatus.APPROVED_AVAILABLE || book.getStatus() == BookStatus.BORROWED)
+                .sorted((a, b) -> Integer.compare(b.getBorrowCount(), a.getBorrowCount()))
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    public AuthorDraft getDraft(String username) {
+        return drafts.get(username);
+    }
+
+    public void saveDraft(String username, AuthorDraft draft) {
+        if (username == null || username.isBlank() || draft == null) {
+            return;
+        }
+        draft.setLastSaved(LocalDateTime.now());
+        drafts.put(username, draft);
+        save();
+    }
+
+    public void clearDraft(String username) {
+        if (username == null || username.isBlank()) {
+            return;
+        }
+        drafts.remove(username);
+        save();
+    }
+
     public ActionResult submitBook(String title,
                                    String authorUsername,
                                    String authorFullName,
                                    String genre,
                                    String description,
                                    String filePath) {
+        return submitBook(title, authorUsername, authorFullName,
+                genre == null || genre.isBlank() ? List.of() : List.of(genre),
+                description, filePath);
+    }
+
+    public ActionResult submitBook(String title,
+                                   String authorUsername,
+                                   String authorFullName,
+                                   List<String> genres,
+                                   String description,
+                                   String filePath) {
         if (title == null || title.isBlank()) {
             return new ActionResult(false, "Title is required.");
         }
-        if (genre == null || genre.isBlank()) {
-            return new ActionResult(false, "Genre is required.");
+        if (genres == null || genres.isEmpty()) {
+            return new ActionResult(false, "At least one genre is required.");
         }
         if (description == null || description.isBlank()) {
             return new ActionResult(false, "Summary is required.");
@@ -181,7 +280,7 @@ public class DataStore {
         if (filePath == null || filePath.isBlank()) {
             return new ActionResult(false, "Book file is required.");
         }
-        books.add(new Book(title, authorUsername, authorFullName, genre, description, filePath));
+        books.add(new Book(title, authorUsername, authorFullName, genres, description, filePath));
         save();
         refreshViews();
         return new ActionResult(true, "OK");
@@ -232,6 +331,45 @@ public class DataStore {
         return new ActionResult(true, "OK");
     }
 
+    public List<Book> getRecommendations(String username, int limit) {
+        refreshViews();
+        if (limit <= 0) {
+            return List.of();
+        }
+        Map<String, Long> genreCounts = books.stream()
+                .filter(book -> username != null && username.equals(book.getBorrowedBy()))
+                .flatMap(book -> book.getGenres().stream())
+                .collect(Collectors.groupingBy(genre -> genre, Collectors.counting()));
+
+        List<Book> candidates = books.stream()
+                .filter(Book::isAvailable)
+                .collect(Collectors.toList());
+
+        if (genreCounts.isEmpty()) {
+            return candidates.stream()
+                    .sorted((a, b) -> Integer.compare(b.getBorrowCount(), a.getBorrowCount()))
+                    .limit(limit)
+                    .collect(Collectors.toList());
+        }
+
+        return candidates.stream()
+                .sorted((a, b) -> {
+                    long scoreA = a.getGenres().stream().mapToLong(g -> genreCounts.getOrDefault(g, 0L)).sum();
+                    long scoreB = b.getGenres().stream().mapToLong(g -> genreCounts.getOrDefault(g, 0L)).sum();
+                    int scoreCompare = Long.compare(scoreB, scoreA);
+                    if (scoreCompare != 0) {
+                        return scoreCompare;
+                    }
+                    return Integer.compare(b.getBorrowCount(), a.getBorrowCount());
+                })
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    public List<String> getGenreOptions() {
+        return GENRE_OPTIONS;
+    }
+
     private Optional<User> findUser(String username) {
         return users.stream().filter(user -> user.getUsername().equalsIgnoreCase(username)).findFirst();
     }
@@ -247,6 +385,13 @@ public class DataStore {
         pendingBooks.setAll(books.stream()
                 .filter(book -> book.getStatus() == BookStatus.PENDING_APPROVAL)
                 .collect(Collectors.toList()));
+        approvedBooks.setAll(books.stream()
+                .filter(book -> book.getStatus() == BookStatus.APPROVED_AVAILABLE || book.getStatus() == BookStatus.BORROWED)
+                .collect(Collectors.toList()));
+        rejectedBooks.setAll(books.stream()
+                .filter(book -> book.getStatus() == BookStatus.REJECTED)
+                .collect(Collectors.toList()));
+        catalogBooks.setAll(approvedBooks);
         usersView.setAll(new ArrayList<>(users));
     }
 
@@ -362,5 +507,22 @@ public class DataStore {
         Book book = new Book(title, "seed-author-" + index, author, genre, summary, "seed://book-" + index);
         book.approve(LocalDate.parse(date));
         books.add(book);
+    }
+
+    private String validatePassword(String password) {
+        if (password == null || password.isBlank()) {
+            return "Password is required.";
+        }
+        if (password.length() < 8 || password.length() > 64) {
+            return "Password must be 8-64 characters long.";
+        }
+        boolean hasUpper = password.chars().anyMatch(Character::isUpperCase);
+        boolean hasLower = password.chars().anyMatch(Character::isLowerCase);
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
+        boolean hasSymbol = password.chars().anyMatch(ch -> !Character.isLetterOrDigit(ch));
+        if (!hasUpper || !hasLower || !hasDigit || !hasSymbol) {
+            return "Password must include upper, lower, number, and symbol.";
+        }
+        return null;
     }
 }
