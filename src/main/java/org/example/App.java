@@ -356,11 +356,11 @@ public class App extends Application {
         Label title = new Label("Student / Staff Dashboard");
         title.getStyleClass().add("section-title");
 
-        int availableCount = dataStore.getAvailableBooks().size();
-        int borrowedCount = dataStore.getBorrowedBooksBy(currentUser.getUsername()).size();
+        VBox availableStat = buildStatCard("Available Books", String.valueOf(dataStore.getAvailableBooks().size()), "accent-teal");
+        VBox borrowedStat = buildStatCard("My Borrowed", String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()), "accent-gold");
         HBox stats = buildStatsRow(
-                buildStatCard("Available Books", String.valueOf(availableCount), "accent-teal"),
-                buildStatCard("My Borrowed", String.valueOf(borrowedCount), "accent-gold"),
+                availableStat,
+                borrowedStat,
                 buildStatCard("Access Level", currentUser.getRole().getDisplayName(), "accent-slate")
         );
 
@@ -375,9 +375,12 @@ public class App extends Application {
         ObservableList<Book> recommendationItems = FXCollections.observableArrayList(
                 dataStore.getRecommendations(currentUser.getUsername(), 6)
         );
-        Runnable refreshRecommendations = () -> recommendationItems.setAll(
-                dataStore.getRecommendations(currentUser.getUsername(), 6)
-        );
+        Runnable refreshRecommendations = () -> {
+            recommendationItems.setAll(dataStore.getRecommendations(currentUser.getUsername(), 6));
+            dataStore.getBorrowedBooksBy(currentUser.getUsername());
+            ((Label) availableStat.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
+            ((Label) borrowedStat.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
+        };
 
         VBox filters = buildCatalogFilters(filtered);
         VBox availableActions = buildAvailableActions(availableTable, refreshRecommendations);
