@@ -883,6 +883,12 @@ public class App extends Application {
         descriptionArea.setWrapText(true);
         TextField fileField = new TextField();
         fileField.setEditable(false);
+        fileField.setOnKeyPressed(event -> {
+            if (event.getCode() == javafx.scene.input.KeyCode.BACK_SPACE
+                    || event.getCode() == javafx.scene.input.KeyCode.DELETE) {
+                fileField.clear();
+            }
+        });
 
         FlowPane genrePane = new FlowPane();
         genrePane.setHgap(8);

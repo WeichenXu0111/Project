@@ -24,6 +24,7 @@ This document summarizes what was built to satisfy Phase 1 requirements in `read
 - Borrow button only works on an available, selected book.
 - Status updates to Borrowed; borrowing date and borrower are stored.
 - Borrowed book list shown in a separate panel.
+- Real-time UI update: borrowing a book immediately refreshes the borrowed books table, available books count, and borrowed count in the stats panel without requiring logout/login.
 
 ## 2. Author Portal
 
@@ -37,6 +38,7 @@ This document summarizes what was built to satisfy Phase 1 requirements in `read
 ### Publish New Book
 - Publish form collects title, genre, summary, and a book file path.
 - File is selected via `FileChooser` and stored as a path string.
+- Selected file can be cleared by pressing Backspace or Delete key.
 - Submission status is set to Pending Approval.
 
 ## 3. Librarian Portal
