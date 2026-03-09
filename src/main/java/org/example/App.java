@@ -93,7 +93,6 @@ public class App extends Application {
         Button home = new Button("Home");
         home.getStyleClass().add("nav-button");
         home.setOnAction(event -> {
-            currentUser = null;
             root.setCenter(buildLanding());
         });
 
@@ -153,19 +152,37 @@ public class App extends Application {
                 "Student / Staff",
                 "Register, log in, browse approved books, and borrow instantly.",
                 "Enter Portal",
-                () -> root.setCenter(buildAuthView(Role.STUDENT))
+                () -> {
+                    if (currentUser != null && (currentUser.getRole() == Role.STUDENT || currentUser.getRole() == Role.STAFF)) {
+                        showDashboard(currentUser);
+                    } else {
+                        root.setCenter(buildAuthView(Role.STUDENT));
+                    }
+                }
         );
         VBox authorCard = buildPortalCard(
                 "Author",
                 "Submit new books, track approval status, and manage submissions.",
                 "Enter Portal",
-                () -> root.setCenter(buildAuthView(Role.AUTHOR))
+                () -> {
+                    if (currentUser != null && currentUser.getRole() == Role.AUTHOR) {
+                        showDashboard(currentUser);
+                    } else {
+                        root.setCenter(buildAuthView(Role.AUTHOR));
+                    }
+                }
         );
         VBox librarianCard = buildPortalCard(
                 "Librarian",
                 "Approve submissions, review users, and manage the catalog.",
                 "Enter Portal",
-                () -> root.setCenter(buildAuthView(Role.LIBRARIAN))
+                () -> {
+                    if (currentUser != null && currentUser.getRole() == Role.LIBRARIAN) {
+                        showDashboard(currentUser);
+                    } else {
+                        root.setCenter(buildAuthView(Role.LIBRARIAN));
+                    }
+                }
         );
 
         HBox cards = new HBox(16, studentCard, authorCard, librarianCard);

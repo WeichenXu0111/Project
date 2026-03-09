@@ -69,6 +69,8 @@ This document summarizes what was built to satisfy Phase 1 requirements in `read
 - Consistent layout, spacing, and typography across all portals.
 - Global styling via `src/main/resources/styles.css`.
 - Card-based layout for readability, with primary/secondary action buttons.
+- Home button returns to the landing page while preserving the current login session; re-entering the same portal skips the login screen.
+- Logout button clears the session and requires re-authentication.
 
 ## 6. Testing
 
