@@ -331,6 +331,24 @@ public class DataStore {
         return new ActionResult(true, "OK");
     }
 
+    public ActionResult returnBook(String bookId, String username) {
+        Optional<Book> bookOpt = findBook(bookId);
+        if (bookOpt.isEmpty()) {
+            return new ActionResult(false, "Book not found.");
+        }
+        Book book = bookOpt.get();
+        if (book.getStatus() != BookStatus.BORROWED) {
+            return new ActionResult(false, "Book is not currently borrowed.");
+        }
+        if (!username.equals(book.getBorrowedBy())) {
+            return new ActionResult(false, "You did not borrow this book.");
+        }
+        book.returnBook();
+        save();
+        refreshViews();
+        return new ActionResult(true, "OK");
+    }
+
     public List<Book> getRecommendations(String username, int limit) {
         refreshViews();
         if (limit <= 0) {

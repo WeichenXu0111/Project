@@ -26,6 +26,11 @@ This document summarizes what was built to satisfy Phase 1 requirements in `read
 - Borrowed book list shown in a separate panel.
 - Real-time UI update: borrowing a book immediately refreshes the borrowed books table, available books count, and borrowed count in the stats panel without requiring logout/login.
 
+### Return Book
+- Return button in the My Borrowed Books panel allows returning a selected book.
+- Confirmation dialog displays book title, author, genre, borrowed date, and due date before confirming.
+- Returning a book restores its status to Available, removes it from the borrowed list, and updates all stats in real time.
+
 ## 2. Author Portal
 
 ### Registration

@@ -392,9 +392,40 @@ public class App extends Application {
         left.setPadding(new Insets(16));
 
         TableView<Book> borrowedTable = buildBorrowedBooksTable();
+
+        Label returnMessage = new Label();
+        returnMessage.getStyleClass().add("form-message");
+
+        Button returnButton = new Button("Return Selected Book");
+        returnButton.getStyleClass().add("danger-button");
+        returnButton.setOnAction(event -> {
+            Book selected = borrowedTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                returnMessage.setText("Please select a book to return.");
+                returnMessage.getStyleClass().setAll("form-message", "error-text");
+                return;
+            }
+            if (showReturnConfirmation(selected)) {
+                DataStore.ActionResult result = dataStore.returnBook(selected.getId(), currentUser.getUsername());
+                if (!result.success()) {
+                    returnMessage.setText(result.message());
+                    returnMessage.getStyleClass().setAll("form-message", "error-text");
+                    return;
+                }
+                dataStore.getBorrowedBooksBy(currentUser.getUsername());
+                ((Label) availableStat.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
+                ((Label) borrowedStat.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
+                refreshRecommendations.run();
+                returnMessage.setText("Book returned successfully.");
+                returnMessage.getStyleClass().setAll("form-message", "success-text");
+            }
+        });
+
+        VBox returnActions = new VBox(8, returnButton, returnMessage);
+
         Label borrowedTitle = new Label("My Borrowed Books");
         borrowedTitle.getStyleClass().add("card-title");
-        VBox borrowedCard = new VBox(12, borrowedTitle, borrowedTable);
+        VBox borrowedCard = new VBox(12, borrowedTitle, borrowedTable, returnActions);
         borrowedCard.getStyleClass().add("card");
         borrowedCard.setPadding(new Insets(16));
 
@@ -689,6 +720,19 @@ public class App extends Application {
                 + "\nBorrow duration: 14 days"
                 + "\nDue date: " + dueDate
                 + "\nAvailability: " + book.getStatus().getDisplayName());
+        Optional<ButtonType> result = alert.showAndWait();
+        return result.isPresent() && result.get() == ButtonType.OK;
+    }
+
+    private boolean showReturnConfirmation(Book book) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Return Confirmation");
+        alert.setHeaderText("Confirm returning this book?");
+        alert.setContentText("Title: " + book.getTitle()
+                + "\nAuthor: " + book.getAuthorFullName()
+                + "\nGenre: " + book.getGenreDisplay()
+                + "\nBorrowed on: " + formatDate(book.getBorrowedDate())
+                + "\nDue date: " + formatDate(book.getDueDate()));
         Optional<ButtonType> result = alert.showAndWait();
         return result.isPresent() && result.get() == ButtonType.OK;
     }

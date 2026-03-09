@@ -154,6 +154,13 @@ public class Book implements Serializable {
         borrowCount++;
     }
 
+    public void returnBook() {
+        status = BookStatus.APPROVED_AVAILABLE;
+        borrowedBy = null;
+        borrowedDate = null;
+        dueDate = null;
+    }
+
     private void setGenresInternal(List<String> newGenres) {
         genres = new ArrayList<>();
         if (newGenres != null) {
