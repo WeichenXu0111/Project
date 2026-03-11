@@ -79,6 +79,9 @@ The HKUST E-Library System is a desktop application that streamlines book manage
   - Multiple genre selection (multi-select)
   - Book summary/description (shown to readers)
   - Book file attachment (PDF support)
+<img width="1904" height="969" alt="image" src="https://github.com/user-attachments/assets/349fc641-8e82-4a58-ba11-b9d8db5ed9a4" />
+
+<img width="1904" height="964" alt="image" src="https://github.com/user-attachments/assets/769e72fd-1366-45a6-b335-4c5af7fd4739" />
 
 #### Auto-Save Draft Feature
 - **Automatic Draft Saving**: 2-second auto-save delay
@@ -109,6 +112,8 @@ The HKUST E-Library System is a desktop application that streamlines book manage
 - Librarian registration with username, full name, password
 - Employee ID (optional)
 - Administrative access control
+<img width="1919" height="967" alt="image" src="https://github.com/user-attachments/assets/fb088fad-2e4f-41fa-9184-dde27cd6c269" />
+
 
 #### Book Approval Workflow
 - **Pending Submissions Queue**:
@@ -119,6 +124,9 @@ The HKUST E-Library System is a desktop application that streamlines book manage
   - **Open File**: Direct file access for detailed review
   - **Approve**: Accept and publish books to catalog
   - **Reject**: Send rejection with feedback
+<img width="1919" height="1002" alt="image" src="https://github.com/user-attachments/assets/a24240e5-2391-435b-a138-5b83ee5b3d20" />
+<img width="1919" height="1008" alt="image" src="https://github.com/user-attachments/assets/5301139e-27d2-4edc-9083-f04c98161c7c" />
+
 
 #### User Management
 - **User Directory**: View all registered users
@@ -440,5 +448,6 @@ HKUST E-Library System - Phase 1 Implementation
 ## Contact
 
 For questions or feedback regarding this project, please contact your course instructor or teaching assistant.
+
 
 
