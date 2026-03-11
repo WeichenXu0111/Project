@@ -249,17 +249,27 @@ public class App extends Application {
         Button submit = new Button("Login");
         submit.getStyleClass().add("primary-button");
         submit.setOnAction(event -> {
+            // Retrieve and trim the username input from the text field
             String username = usernameField.getText().trim();
+            // Get the plain text password from the password field
             String password = passwordField.getText();
+            
+            // Authenticate the user against the data store with the specified role
+            // The authenticate method validates credentials and role matching
             User user = dataStore.authenticate(username, password, role);
             if (user == null) {
+                // Display error message if authentication fails (invalid credentials or role mismatch)
                 message.setText("Invalid credentials or role mismatch.");
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // Set the authenticated user as the current user for this session
             currentUser = user;
             message.setText("Login successful.");
             message.getStyleClass().setAll("form-message", "success-text");
+            
+            // Navigate to the appropriate dashboard based on user role
             showDashboard(user);
         });
 
@@ -306,11 +316,20 @@ public class App extends Application {
         Button submit = new Button("Create Account");
         submit.getStyleClass().add("primary-button");
         submit.setOnAction(event -> {
+            // Determine the final role: for STUDENT role, use the selected value from dropdown
+            // For AUTHOR and LIBRARIAN, use the portal role directly
             Role finalRole = role == Role.STUDENT ? studentStaffRole.getValue() : role;
+            
+            // Retrieve and trim user input from the registration form
             String username = usernameField.getText().trim();
             String fullName = fullNameField.getText().trim();
             String password = passwordField.getText();
 
+            // Call the data store's registerUser method which handles:
+            // - Username uniqueness validation
+            // - Password strength validation
+            // - Data encryption and secure storage
+            // - User creation with the specified role and optional fields
             DataStore.RegistrationResult result = dataStore.registerUser(
                     username,
                     fullName,
@@ -320,11 +339,14 @@ public class App extends Application {
                     employeeIdField.getText().trim()
             );
 
+            // Display error message if registration fails (e.g., duplicate username, weak password)
             if (!result.success()) {
                 message.setText(result.message());
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // Display success message and prompt user to proceed with login
             message.setText("Registration successful. You can now log in.");
             message.getStyleClass().setAll("form-message", "success-text");
         });
@@ -373,6 +395,8 @@ public class App extends Application {
         Label title = new Label("Student / Staff Dashboard");
         title.getStyleClass().add("section-title");
 
+        // Build statistics cards displaying key information
+        // These cards show real-time counts from the data store
         VBox availableStat = buildStatCard("Available Books", String.valueOf(dataStore.getAvailableBooks().size()), "accent-teal");
         VBox borrowedStat = buildStatCard("My Borrowed", String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()), "accent-gold");
         HBox stats = buildStatsRow(
@@ -381,20 +405,30 @@ public class App extends Application {
                 buildStatCard("Access Level", currentUser.getRole().getDisplayName(), "accent-slate")
         );
 
+        // Initialize the observable list from the data store's catalog
         ObservableList<Book> catalog = dataStore.getCatalogBooks();
+        
+        // Wrap the catalog in a FilteredList to enable dynamic filtering without modifying the original
         FilteredList<Book> filtered = new FilteredList<>(catalog, book -> true);
 
+        // Create the books table view with sorting capability
         TableView<Book> availableTable = buildAvailableBooksTable();
+        
+        // Wrap filtered list in a SortedList to enable column-based sorting
         SortedList<Book> sorted = new SortedList<>(filtered);
         sorted.comparatorProperty().bind(availableTable.comparatorProperty());
         availableTable.setItems(sorted);
 
+        // Initialize recommendations list with up to 6 personalized book recommendations
         ObservableList<Book> recommendationItems = FXCollections.observableArrayList(
                 dataStore.getRecommendations(currentUser.getUsername(), 6)
         );
+        
+        // Define a refresh callback that updates statistics and recommendations when borrowing occurs
         Runnable refreshRecommendations = () -> {
             recommendationItems.setAll(dataStore.getRecommendations(currentUser.getUsername(), 6));
             dataStore.getBorrowedBooksBy(currentUser.getUsername());
+            // Update stat card values to reflect current state
             ((Label) availableStat.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
             ((Label) borrowedStat.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
         };
@@ -416,23 +450,31 @@ public class App extends Application {
         Button returnButton = new Button("Return Selected Book");
         returnButton.getStyleClass().add("danger-button");
         returnButton.setOnAction(event -> {
+            // Get the currently selected book from the borrowed books table
             Book selected = borrowedTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
                 returnMessage.setText("Please select a book to return.");
                 returnMessage.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // Show a confirmation dialog with book details and original borrow date
             if (showReturnConfirmation(selected)) {
+                // Process the book return through the data store
+                // This updates the book status back to available and clears the borrow record
                 DataStore.ActionResult result = dataStore.returnBook(selected.getId(), currentUser.getUsername());
                 if (!result.success()) {
                     returnMessage.setText(result.message());
                     returnMessage.getStyleClass().setAll("form-message", "error-text");
                     return;
                 }
+                
+                // Refresh the borrowed books list and update dashboard statistics
                 dataStore.getBorrowedBooksBy(currentUser.getUsername());
                 ((Label) availableStat.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
                 ((Label) borrowedStat.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
                 refreshRecommendations.run();
+                
                 returnMessage.setText("Book returned successfully.");
                 returnMessage.getStyleClass().setAll("form-message", "success-text");
             }
@@ -565,50 +607,64 @@ public class App extends Application {
         Button preview = new Button("Quick Preview");
         preview.getStyleClass().add("secondary-button");
         preview.setOnAction(event -> {
+            // Get the currently selected book from the table
             Book selected = table.getSelectionModel().getSelectedItem();
             if (selected == null) {
                 message.setText("Please select a book to preview.");
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            // Display a dialog showing the first 3 pages or text preview of the selected book
             showQuickPreviewDialog(selected);
         });
 
         Button summary = new Button("Read Summary");
         summary.getStyleClass().add("secondary-button");
         summary.setOnAction(event -> {
+            // Get the currently selected book from the table
             Book selected = table.getSelectionModel().getSelectedItem();
             if (selected == null) {
                 message.setText("Please select a book to read its summary.");
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            // Display a dialog showing the full book summary/description
             showSummaryDialog(selected);
         });
 
         Button borrow = new Button("Borrow Selected Book");
         borrow.getStyleClass().add("primary-button");
         borrow.setOnAction(event -> {
+            // Get the currently selected book from the catalog table
             Book selected = table.getSelectionModel().getSelectedItem();
             if (selected == null) {
                 message.setText("Please select a book to borrow.");
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // Check if the selected book is currently available (not already borrowed by someone else)
             if (!selected.isAvailable()) {
                 message.setText("This book is not available right now.");
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // Show a confirmation dialog with book details and 14-day borrowing period
             if (!showBorrowConfirmation(selected)) {
                 return;
             }
+            
+            // Attempt to borrow the book through the data store
+            // This records the book ID, current user, and sets a 14-day due date
             DataStore.ActionResult result = dataStore.borrowBook(selected.getId(), currentUser.getUsername());
             if (!result.success()) {
                 message.setText(result.message());
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // If borrowing is successful, trigger the refresh callback to update dashboard statistics
             if (onBorrowSuccess != null) {
                 onBorrowSuccess.run();
             }
@@ -637,10 +693,13 @@ public class App extends Application {
         DatePicker publishDate = new DatePicker();
         publishDate.setPromptText("Publish date");
 
+        // Define a lambda function that applies all active filters to the book catalog
         Runnable applyFilter = () -> filtered.setPredicate(book -> {
             if (book == null) {
                 return false;
             }
+            
+            // Filter 1: Search by book title or author full name (case-insensitive substring matching)
             String search = searchField.getText() == null ? "" : searchField.getText().trim().toLowerCase();
             if (!search.isEmpty()) {
                 String title = book.getTitle() == null ? "" : book.getTitle().toLowerCase();
@@ -649,13 +708,18 @@ public class App extends Application {
                     return false;
                 }
             }
+            
+            // Filter 2: Filter by genre selection (multi-genre support)
             String genre = genreBox.getValue();
             if (genre != null && !"All Genres".equals(genre)) {
+                // Check if the book's genres list contains the selected genre
                 boolean match = book.getGenres().stream().anyMatch(item -> item.equalsIgnoreCase(genre));
                 if (!match) {
                     return false;
                 }
             }
+            
+            // Filter 3: Filter by availability status (Available or Borrowed)
             String availability = availabilityBox.getValue();
             if ("Available".equals(availability) && !book.isAvailable()) {
                 return false;
@@ -663,6 +727,8 @@ public class App extends Application {
             if ("Borrowed".equals(availability) && book.isAvailable()) {
                 return false;
             }
+            
+            // Filter 4: Filter by exact publish/approval date
             LocalDate filterDate = publishDate.getValue();
             if (filterDate != null) {
                 LocalDate approved = book.getApprovedDate();
@@ -673,11 +739,13 @@ public class App extends Application {
             return true;
         });
 
+        // Add listeners to all filter controls to trigger filter update whenever any filter changes
         searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
         genreBox.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
         availabilityBox.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
         publishDate.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
 
+        // Clear button to reset all filters to their default state
         Button clear = new Button("Clear Filters");
         clear.getStyleClass().add("ghost-button");
         clear.setOnAction(event -> {
@@ -824,19 +892,32 @@ public class App extends Application {
     }
 
     private List<Image> renderPdfPreview(String filePath, int maxPages) {
+        // Convert the file path string to a Path object for file system operations
         Path path = Path.of(filePath);
+        
+        // Verify that the file exists at the specified path
         if (!Files.exists(path)) {
             return List.of();
         }
+        
         List<Image> images = new ArrayList<>();
         try (PDDocument document = PDDocument.load(path.toFile())) {
+            // Create a PDF renderer with the loaded document
             PDFRenderer renderer = new PDFRenderer(document);
+            
+            // Calculate the actual number of pages to render (limit to maxPages)
             int pageCount = Math.min(document.getNumberOfPages(), maxPages);
+            
+            // Render each page to a BufferedImage at 140 DPI and convert to JavaFX Image
             for (int i = 0; i < pageCount; i++) {
+                // renderImageWithDPI renders the page at the specified resolution
+                // ImageType.RGB ensures color output
                 BufferedImage buffered = renderer.renderImageWithDPI(i, 140, ImageType.RGB);
+                // Convert AWT BufferedImage to JavaFX Image for display
                 images.add(SwingFXUtils.toFXImage(buffered, null));
             }
         } catch (IOException ex) {
+            // Return empty list if PDF loading or rendering fails
             return List.of();
         }
         return images;
@@ -976,17 +1057,22 @@ public class App extends Application {
         Label draftStatus = new Label("Draft not saved yet.");
         draftStatus.getStyleClass().add("muted-text");
 
+        // PauseTransition is used to implement auto-save with a 2-second delay
+        // This prevents excessive file writes while the user is still typing
         PauseTransition autoSave = new PauseTransition(Duration.seconds(2));
         Runnable triggerSave = () -> {
             autoSave.stop();
             autoSave.playFromStart();
         };
         autoSave.setOnFinished(event -> {
+            // When the 2-second pause is complete, save the current form data as a draft
             AuthorDraft draft = buildDraftFromForm(titleField, descriptionArea, fileField, genreChecks);
             dataStore.saveDraft(currentUser.getUsername(), draft);
+            // Update the UI to show the last auto-save timestamp
             draftStatus.setText("Draft auto-saved at " + formatDateTime(draft.getLastSaved()));
         });
 
+        // Add listeners to all form fields to trigger auto-save when content changes
         titleField.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
         descriptionArea.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
         fileField.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
@@ -1013,7 +1099,11 @@ public class App extends Application {
         message.getStyleClass().add("form-message");
 
         submit.setOnAction(event -> {
+            // Collect all selected genres from the multi-select checkboxes
             List<String> genres = collectGenres(genreChecks);
+            
+            // Submit the book to the data store with all required information
+            // The book status is set to PENDING_APPROVAL and will be reviewed by a librarian
             DataStore.ActionResult result = dataStore.submitBook(
                     titleField.getText().trim(),
                     currentUser.getUsername(),
@@ -1022,17 +1112,23 @@ public class App extends Application {
                     descriptionArea.getText().trim(),
                     fileField.getText().trim()
             );
+            
             if (!result.success()) {
                 message.setText(result.message());
                 message.getStyleClass().setAll("form-message", "error-text");
                 return;
             }
+            
+            // Clear all form fields after successful submission
             titleField.clear();
             descriptionArea.clear();
             fileField.clear();
             genreChecks.forEach(checkBox -> checkBox.setSelected(false));
+            
+            // Clear the draft from storage since it has been successfully submitted
             dataStore.clearDraft(currentUser.getUsername());
             draftStatus.setText("Draft cleared after submission.");
+            
             message.setText("Book submitted and pending librarian approval.");
             message.getStyleClass().setAll("form-message", "success-text");
         });
@@ -1224,26 +1320,35 @@ public class App extends Application {
     }
 
     private void handleApproval(TableView<Book> table, boolean approved, Label message) {
+        // Retrieve the currently selected book from the pending submissions table
         Book selected = table.getSelectionModel().getSelectedItem();
         if (selected == null) {
             message.setText("Please select a submission first.");
             message.getStyleClass().setAll("form-message", "error-text");
             return;
         }
+        
+        // Display a confirmation alert to prevent accidental approval/rejection
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.setTitle("Confirm Action");
         alert.setHeaderText(approved ? "Approve this submission?" : "Reject this submission?");
         alert.setContentText(selected.getTitle());
         alert.showAndWait().ifPresent(result -> {
             if (result == ButtonType.OK) {
+                // Call the appropriate data store method based on the approval decision
+                // Approved books transition to APPROVED_AVAILABLE status and appear in the student catalog
+                // Rejected books transition to REJECTED status and are not visible to students
                 DataStore.ActionResult actionResult = approved
                         ? dataStore.approveBook(selected.getId())
                         : dataStore.rejectBook(selected.getId());
+                        
                 if (!actionResult.success()) {
                     message.setText(actionResult.message());
                     message.getStyleClass().setAll("form-message", "error-text");
                     return;
                 }
+                
+                // Display success message indicating the action was completed
                 message.setText(approved ? "Book approved." : "Book rejected.");
                 message.getStyleClass().setAll("form-message", "success-text");
             }
