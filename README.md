@@ -22,6 +22,7 @@ The HKUST E-Library System is a desktop application that streamlines book manage
 - User registration with username, full name, password, and role selection
 - Secure login with credential validation
 - Profile management capabilities
+<img width="1650" height="1002" alt="image" src="https://github.com/user-attachments/assets/faa5dcbb-99e8-4322-a152-d01011f1b1d3" />
 
 #### Book Browsing & Discovery
 - **Available Books Catalog**: Browse all approved books with detailed information
@@ -43,6 +44,8 @@ The HKUST E-Library System is a desktop application that streamlines book manage
   - View all currently borrowed books with due dates
   - Return borrowed books with confirmation dialog
   - Track borrow and due dates
+<img width="1655" height="1008" alt="image" src="https://github.com/user-attachments/assets/60042c04-7167-44e5-bd46-bcb629a4c24b" />
+
 
 #### Book Exploration
 - **Quick Preview**: View first 3 pages of PDF books or text preview of other formats
@@ -437,4 +440,5 @@ HKUST E-Library System - Phase 1 Implementation
 ## Contact
 
 For questions or feedback regarding this project, please contact your course instructor or teaching assistant.
+
 
