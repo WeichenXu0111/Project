@@ -1,7 +1,8 @@
 package org.example;
 
-import javafx.animation.PauseTransition;
 import javafx.application.Application;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
@@ -16,7 +17,6 @@ import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-import javafx.util.Duration;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
@@ -24,30 +24,26 @@ import org.example.data.DataStore;
 import org.example.model.AuthorDraft;
 import org.example.model.Book;
 import org.example.model.BookStatus;
+import org.example.model.Notification;
 import org.example.model.Role;
 import org.example.model.User;
 
-import java.awt.Desktop;
 import java.awt.image.BufferedImage;
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class App extends Application {
     private final DataStore dataStore = new DataStore();
     private Stage stage;
-    private Scene scene;
     private BorderPane root;
+    private Scene scene;
     private User currentUser;
 
     public static void launchApp(String[] args) {
@@ -62,128 +58,105 @@ public class App extends Application {
         root = new BorderPane();
         root.setTop(buildHeader());
         root.setCenter(buildLanding());
-        root.getStyleClass().add("app-shell");
+        scene = new Scene(root, 1200, 760);
+        scene.getStylesheets().add(Objects.requireNonNull(getClass().getResource("/styles.css")).toExternalForm());
 
-        scene = new Scene(root, 1100, 700);
-        scene.getStylesheets().add(getClass().getResource("/styles.css").toExternalForm());
-
-        stage.setTitle("HKUST E-Library System - Phase 1");
+        stage.setTitle("HKUST E-Library System - Phase 2");
         stage.setScene(scene);
         stage.show();
+
+        restorePreviousSessionIfPossible();
     }
 
     private HBox buildHeader() {
         Label title = new Label("HKUST Library");
         title.getStyleClass().add("app-title");
 
-        Label subtitle = new Label("E-Library System");
+        Label subtitle = new Label("E-Library System - Phase 2");
         subtitle.getStyleClass().add("brand-subtitle");
 
         VBox brand = new VBox(2, title, subtitle);
-        brand.getStyleClass().add("brand-block");
-
-        ImageView logoView = buildLogoView();
-        HBox brandRow = logoView == null ? new HBox(brand) : new HBox(12, logoView, brand);
+        ImageView logoView = tryBuildLogo();
+        HBox brandRow = logoView == null ? new HBox(brand) : new HBox(10, logoView, brand);
         brandRow.setAlignment(Pos.CENTER_LEFT);
-        brandRow.getStyleClass().add("brand-row");
+
+        Button homeBtn = navButton("Home", () -> {
+            if (currentUser == null) root.setCenter(buildLanding());
+            else showDashboard(currentUser, "Dashboard");
+        });
+        Button profileBtn = navButton("My Profile", () -> {
+            if (currentUser != null) {
+                root.setCenter(buildProfileScreen());
+                saveSession("Profile", null);
+            }
+        });
+        Button notificationsBtn = navButton("Notifications", () -> {
+            if (currentUser != null) {
+                root.setCenter(buildNotificationScreen());
+                saveSession("Notifications", null);
+            }
+        });
+        Button crashBtn = navButton("Crash Test", this::simulateCrash);
+        crashBtn.getStyleClass().add("danger-button");
+
+        Button logoutBtn = navButton("Logout", () -> {
+            currentUser = null;
+            dataStore.clearSessionState();
+            root.setCenter(buildLanding());
+        });
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button home = new Button("Home");
-        home.getStyleClass().add("nav-button");
-        home.setOnAction(event -> {
-            root.setCenter(buildLanding());
-        });
-
-        Button logout = new Button("Logout");
-        logout.getStyleClass().addAll("nav-button", "ghost-button");
-        logout.setOnAction(event -> {
-            currentUser = null;
-            root.setCenter(buildLanding());
-        });
-
-        HBox header = new HBox(16, brandRow, spacer, home, logout);
+        HBox header = new HBox(12, brandRow, spacer, homeBtn, notificationsBtn, profileBtn, crashBtn, logoutBtn);
+        header.setPadding(new Insets(14, 24, 14, 24));
         header.setAlignment(Pos.CENTER_LEFT);
-        header.setPadding(new Insets(16, 28, 16, 28));
         header.getStyleClass().add("app-header");
+
+        Runnable update = () -> {
+            boolean loggedIn = currentUser != null;
+            profileBtn.setVisible(loggedIn); profileBtn.setManaged(loggedIn);
+            notificationsBtn.setVisible(loggedIn); notificationsBtn.setManaged(loggedIn);
+            logoutBtn.setVisible(loggedIn); logoutBtn.setManaged(loggedIn);
+            crashBtn.setVisible(loggedIn); crashBtn.setManaged(loggedIn);
+        };
+        root.centerProperty().addListener((a, b, c) -> update.run());
+        update.run();
+
         return header;
     }
 
-    private ImageView buildLogoView() {
-        Image logo = loadLogoImage();
-        if (logo == null) {
+    private ImageView tryBuildLogo() {
+        try {
+            Image image = null;
+            if (getClass().getResource("/logo.png") != null) image = new Image(getClass().getResource("/logo.png").toExternalForm());
+            else if (new File("logo.png").exists()) image = new Image(new File("logo.png").toURI().toString());
+            if (image == null) return null;
+            ImageView v = new ImageView(image);
+            v.setFitHeight(44);
+            v.setPreserveRatio(true);
+            return v;
+        } catch (Exception ignored) {
             return null;
         }
-        ImageView view = new ImageView(logo);
-        view.getStyleClass().add("brand-logo");
-        view.setFitHeight(52);
-        view.setPreserveRatio(true);
-        view.setSmooth(true);
-        return view;
     }
 
-    private Image loadLogoImage() {
-        URL resource = getClass().getResource("/logo.png");
-        if (resource != null) {
-            return new Image(resource.toExternalForm());
-        }
-        File fallback = new File("logo.png");
-        if (fallback.exists()) {
-            return new Image(fallback.toURI().toString());
-        }
-        return null;
+    private Button navButton(String text, Runnable action) {
+        Button b = new Button(text);
+        b.getStyleClass().add("nav-button");
+        b.setOnAction(e -> action.run());
+        return b;
     }
 
     private VBox buildLanding() {
-        Label pill = new Label("Phase 1 Portal");
-        pill.getStyleClass().add("hero-pill");
-
-        Label hero = new Label("Welcome to HKUST Library");
-        hero.getStyleClass().add("hero-title");
-
-        Label subtitle = new Label("Access student/staff, author, and librarian portals with a consistent workflow.");
+        Label title = new Label("Welcome to HKUST Library");
+        title.getStyleClass().add("hero-title");
+        Label subtitle = new Label("Phase 2: Student/Staff, Author, and Librarian portals with advanced features.");
         subtitle.getStyleClass().add("hero-subtitle");
 
-        VBox heroPanel = new VBox(8, pill, hero, subtitle);
-        heroPanel.getStyleClass().add("hero-panel");
-
-        VBox studentCard = buildPortalCard(
-                "Student / Staff",
-                "Register, log in, browse approved books, and borrow instantly.",
-                "Enter Portal",
-                () -> {
-                    if (currentUser != null && (currentUser.getRole() == Role.STUDENT || currentUser.getRole() == Role.STAFF)) {
-                        showDashboard(currentUser);
-                    } else {
-                        root.setCenter(buildAuthView(Role.STUDENT));
-                    }
-                }
-        );
-        VBox authorCard = buildPortalCard(
-                "Author",
-                "Submit new books, track approval status, and manage submissions.",
-                "Enter Portal",
-                () -> {
-                    if (currentUser != null && currentUser.getRole() == Role.AUTHOR) {
-                        showDashboard(currentUser);
-                    } else {
-                        root.setCenter(buildAuthView(Role.AUTHOR));
-                    }
-                }
-        );
-        VBox librarianCard = buildPortalCard(
-                "Librarian",
-                "Approve submissions, review users, and manage the catalog.",
-                "Enter Portal",
-                () -> {
-                    if (currentUser != null && currentUser.getRole() == Role.LIBRARIAN) {
-                        showDashboard(currentUser);
-                    } else {
-                        root.setCenter(buildAuthView(Role.LIBRARIAN));
-                    }
-                }
-        );
+        VBox studentCard = portalCard("Student / Staff", "Borrow, read, bookmark, return, and manage profile.", () -> root.setCenter(buildAuth(Role.STUDENT)));
+        VBox authorCard = portalCard("Author", "Publish, update, delete, and track submission notifications.", () -> root.setCenter(buildAuth(Role.AUTHOR)));
+        VBox librarianCard = portalCard("Librarian", "Approve books, manage users, and monitor records.", () -> root.setCenter(buildAuth(Role.LIBRARIAN)));
 
         HBox cards = new HBox(16, studentCard, authorCard, librarianCard);
         cards.setAlignment(Pos.CENTER);
@@ -191,372 +164,181 @@ public class App extends Application {
         HBox.setHgrow(authorCard, Priority.ALWAYS);
         HBox.setHgrow(librarianCard, Priority.ALWAYS);
 
-        VBox content = new VBox(24, heroPanel, cards);
-        content.setPadding(new Insets(28, 32, 32, 32));
-        content.getStyleClass().add("landing-wrap");
-
-        return new VBox(content);
+        VBox wrap = new VBox(20, title, subtitle, cards);
+        wrap.setPadding(new Insets(28));
+        return wrap;
     }
 
-    private VBox buildPortalCard(String titleText, String descriptionText, String buttonText, Runnable action) {
-        Label title = new Label(titleText);
-        title.getStyleClass().add("card-title");
-
-        Label description = new Label(descriptionText);
-        description.getStyleClass().add("muted-text");
-        description.setWrapText(true);
-
-        Button button = new Button(buttonText);
-        button.getStyleClass().add("primary-button");
-        button.setOnAction(event -> action.run());
-
-        VBox card = new VBox(10, title, description, button);
-        card.getStyleClass().add("portal-card");
-        card.setPadding(new Insets(16));
-        card.setPrefWidth(280);
-        return card;
+    private VBox portalCard(String title, String desc, Runnable action) {
+        Label t = new Label(title);
+        t.getStyleClass().add("card-title");
+        Label d = new Label(desc);
+        d.getStyleClass().add("muted-text");
+        d.setWrapText(true);
+        Button enter = new Button("Enter Portal");
+        enter.getStyleClass().add("primary-button");
+        enter.setOnAction(e -> action.run());
+        VBox box = new VBox(10, t, d, enter);
+        box.setPadding(new Insets(16));
+        box.getStyleClass().add("card");
+        return box;
     }
 
-    private BorderPane buildAuthView(Role role) {
+    private BorderPane buildAuth(Role role) {
         Label title = new Label(role.getDisplayName() + " Portal");
         title.getStyleClass().add("section-title");
 
-        TabPane tabPane = new TabPane();
-        tabPane.getTabs().add(buildLoginTab(role));
-        tabPane.getTabs().add(buildRegisterTab(role));
-        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        TabPane tabs = new TabPane(buildLoginTab(role), buildRegisterTab(role));
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
 
-        BorderPane layout = new BorderPane();
-        layout.setTop(title);
-        BorderPane.setMargin(title, new Insets(24, 24, 12, 24));
-        layout.setCenter(tabPane);
-        BorderPane.setMargin(tabPane, new Insets(0, 24, 24, 24));
-        return layout;
+        BorderPane pane = new BorderPane(tabs);
+        pane.setTop(title);
+        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        BorderPane.setMargin(tabs, new Insets(0, 20, 20, 20));
+        return pane;
     }
 
     private Tab buildLoginTab(Role role) {
-        Tab tab = new Tab("Login");
+        TextField username = new TextField();
+        PasswordField password = new PasswordField();
+        Label msg = new Label();
 
-        TextField usernameField = new TextField();
-        PasswordField passwordField = new PasswordField();
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
+        GridPane form = formGrid();
+        form.addRow(0, formLabel("Username"), username);
+        form.addRow(1, formLabel("Password"), password);
 
-        GridPane grid = buildFormGrid();
-        grid.addRow(0, buildFormLabel("Username"), usernameField);
-        grid.addRow(1, buildFormLabel("Password"), passwordField);
-
-        Button submit = new Button("Login");
-        submit.getStyleClass().add("primary-button");
-        submit.setOnAction(event -> {
-            // Retrieve and trim the username input from the text field
-            String username = usernameField.getText().trim();
-            // Get the plain text password from the password field
-            String password = passwordField.getText();
-            
-            // Authenticate the user against the data store with the specified role
-            // The authenticate method validates credentials and role matching
-            User user = dataStore.authenticate(username, password, role);
-            if (user == null) {
-                // Display error message if authentication fails (invalid credentials or role mismatch)
-                message.setText("Invalid credentials or role mismatch.");
-                message.getStyleClass().setAll("form-message", "error-text");
+        Button login = new Button("Login");
+        login.getStyleClass().add("primary-button");
+        login.setOnAction(e -> {
+            User u = dataStore.authenticate(username.getText().trim(), password.getText(), role);
+            if (u == null) {
+                setMessage(msg, "Invalid credentials, role mismatch, or account is inactive.", false);
                 return;
             }
-            
-            // Set the authenticated user as the current user for this session
-            currentUser = user;
-            message.setText("Login successful.");
-            message.getStyleClass().setAll("form-message", "success-text");
-            
-            // Navigate to the appropriate dashboard based on user role
-            showDashboard(user);
+            currentUser = u;
+            showDashboard(u, "Dashboard");
         });
 
-        VBox content = new VBox(16, grid, submit, message);
-        content.setPadding(new Insets(24));
+        VBox content = new VBox(14, form, login, msg);
+        content.setPadding(new Insets(20));
         content.getStyleClass().add("card");
-
-        tab.setContent(content);
-        return tab;
+        return new Tab("Login", content);
     }
 
     private Tab buildRegisterTab(Role role) {
-        Tab tab = new Tab("Register");
-
-        TextField usernameField = new TextField();
-        TextField fullNameField = new TextField();
-        PasswordField passwordField = new PasswordField();
-        ComboBox<Role> studentStaffRole = new ComboBox<>();
-        TextField bioField = new TextField();
-        TextField employeeIdField = new TextField();
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
+        TextField username = new TextField();
+        TextField fullName = new TextField();
+        PasswordField password = new PasswordField();
+        ComboBox<Role> roleSelect = new ComboBox<>();
+        TextField bio = new TextField();
+        TextField employeeId = new TextField();
+        Label msg = new Label();
 
         if (role == Role.STUDENT) {
-            studentStaffRole.getItems().addAll(Role.STUDENT, Role.STAFF);
-            studentStaffRole.getSelectionModel().select(Role.STUDENT);
+            roleSelect.getItems().addAll(Role.STUDENT, Role.STAFF);
+            roleSelect.getSelectionModel().select(Role.STUDENT);
         }
 
-        GridPane grid = buildFormGrid();
-        int row = 0;
-        grid.addRow(row++, buildFormLabel("Username"), usernameField);
-        grid.addRow(row++, buildFormLabel("Full Name"), fullNameField);
-        grid.addRow(row++, buildFormLabel("Password"), passwordField);
-        if (role == Role.STUDENT) {
-            grid.addRow(row++, buildFormLabel("Role"), studentStaffRole);
-        }
-        if (role == Role.AUTHOR) {
-            grid.addRow(row++, buildFormLabel("Bio (optional)"), bioField);
-        }
-        if (role == Role.LIBRARIAN) {
-            grid.addRow(row++, buildFormLabel("Employee ID (optional)"), employeeIdField);
-        }
+        GridPane form = formGrid();
+        int r = 0;
+        form.addRow(r++, formLabel("Username"), username);
+        form.addRow(r++, formLabel("Full Name"), fullName);
+        form.addRow(r++, formLabel("Password"), password);
+        if (role == Role.STUDENT) form.addRow(r++, formLabel("Role"), roleSelect);
+        if (role == Role.AUTHOR) form.addRow(r++, formLabel("Bio"), bio);
+        if (role == Role.LIBRARIAN) form.addRow(r++, formLabel("Employee ID"), employeeId);
 
-        Button submit = new Button("Create Account");
-        submit.getStyleClass().add("primary-button");
-        submit.setOnAction(event -> {
-            // Determine the final role: for STUDENT role, use the selected value from dropdown
-            // For AUTHOR and LIBRARIAN, use the portal role directly
-            Role finalRole = role == Role.STUDENT ? studentStaffRole.getValue() : role;
-            
-            // Retrieve and trim user input from the registration form
-            String username = usernameField.getText().trim();
-            String fullName = fullNameField.getText().trim();
-            String password = passwordField.getText();
-
-            // Call the data store's registerUser method which handles:
-            // - Username uniqueness validation
-            // - Password strength validation
-            // - Data encryption and secure storage
-            // - User creation with the specified role and optional fields
+        Button create = new Button("Create Account");
+        create.getStyleClass().add("primary-button");
+        create.setOnAction(e -> {
+            Role finalRole = role == Role.STUDENT ? roleSelect.getValue() : role;
             DataStore.RegistrationResult result = dataStore.registerUser(
-                    username,
-                    fullName,
-                    password,
+                    username.getText().trim(),
+                    fullName.getText().trim(),
+                    password.getText(),
                     finalRole,
-                    bioField.getText().trim(),
-                    employeeIdField.getText().trim()
+                    bio.getText().trim(),
+                    employeeId.getText().trim()
             );
-
-            // Display error message if registration fails (e.g., duplicate username, weak password)
-            if (!result.success()) {
-                message.setText(result.message());
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            
-            // Display success message and prompt user to proceed with login
-            message.setText("Registration successful. You can now log in.");
-            message.getStyleClass().setAll("form-message", "success-text");
+            setMessage(msg, result.message(), result.success());
         });
 
-        VBox content = new VBox(16, grid, submit, message);
-        content.setPadding(new Insets(24));
+        VBox content = new VBox(14, form, create, msg);
+        content.setPadding(new Insets(20));
         content.getStyleClass().add("card");
-
-        tab.setContent(content);
-        return tab;
+        return new Tab("Register", content);
     }
 
-    private GridPane buildFormGrid() {
-        GridPane grid = new GridPane();
-        grid.setHgap(16);
-        grid.setVgap(12);
-        grid.getStyleClass().add("form-grid");
-        ColumnConstraints left = new ColumnConstraints();
-        left.setMinWidth(160);
-        left.setPrefWidth(200);
-        left.setMaxWidth(240);
-        ColumnConstraints right = new ColumnConstraints();
-        right.setHgrow(Priority.ALWAYS);
-        grid.getColumnConstraints().addAll(left, right);
-        return grid;
-    }
-
-    private Label buildFormLabel(String text) {
-        Label label = new Label(text);
-        label.setWrapText(true);
-        label.setMinWidth(160);
-        return label;
-    }
-
-    private void showDashboard(User user) {
-        if (user.getRole() == Role.AUTHOR) {
-            root.setCenter(buildAuthorDashboard());
-        } else if (user.getRole() == Role.LIBRARIAN) {
-            root.setCenter(buildLibrarianDashboard());
-        } else {
-            root.setCenter(buildStudentDashboard());
-        }
+    private void showDashboard(User user, String screenName) {
+        if (user.getRole() == Role.AUTHOR) root.setCenter(buildAuthorDashboard());
+        else if (user.getRole() == Role.LIBRARIAN) root.setCenter(buildLibrarianDashboard());
+        else root.setCenter(buildStudentDashboard());
+        saveSession(screenName, null);
     }
 
     private BorderPane buildStudentDashboard() {
+        dataStore.autoReturnExpiredBooks();
+
         Label title = new Label("Student / Staff Dashboard");
         title.getStyleClass().add("section-title");
 
-        // Build statistics cards displaying key information
-        // These cards show real-time counts from the data store
-        VBox availableStat = buildStatCard("Available Books", String.valueOf(dataStore.getAvailableBooks().size()), "accent-teal");
-        VBox borrowedStat = buildStatCard("My Borrowed", String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()), "accent-gold");
-        HBox stats = buildStatsRow(
-                availableStat,
-                borrowedStat,
-                buildStatCard("Access Level", currentUser.getRole().getDisplayName(), "accent-slate")
-        );
+        VBox statsA = statCard("Available Books", String.valueOf(dataStore.getAvailableBooks().size()));
+        VBox statsB = statCard("My Borrowed", String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
+        VBox statsC = statCard("Borrow Limit", "Max " + dataStore.getMaxBorrowLimit());
+        HBox stats = new HBox(10, statsA, statsB, statsC);
 
-        // Initialize the observable list from the data store's catalog
-        ObservableList<Book> catalog = dataStore.getCatalogBooks();
-        
-        // Wrap the catalog in a FilteredList to enable dynamic filtering without modifying the original
-        FilteredList<Book> filtered = new FilteredList<>(catalog, book -> true);
-
-        // Create the books table view with sorting capability
-        TableView<Book> availableTable = buildAvailableBooksTable();
-        
-        // Wrap filtered list in a SortedList to enable column-based sorting
+        TableView<Book> catalogTable = buildAvailableBooksTable();
+        catalogTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        FilteredList<Book> filtered = new FilteredList<>(dataStore.getCatalogBooks(), b -> true);
         SortedList<Book> sorted = new SortedList<>(filtered);
-        sorted.comparatorProperty().bind(availableTable.comparatorProperty());
-        availableTable.setItems(sorted);
-
-        // Initialize recommendations list with up to 6 personalized book recommendations
-        ObservableList<Book> recommendationItems = FXCollections.observableArrayList(
-                dataStore.getRecommendations(currentUser.getUsername(), 6)
-        );
-        
-        // Define a refresh callback that updates statistics and recommendations when borrowing occurs
-        Runnable refreshRecommendations = () -> {
-            recommendationItems.setAll(dataStore.getRecommendations(currentUser.getUsername(), 6));
-            dataStore.getBorrowedBooksBy(currentUser.getUsername());
-            // Update stat card values to reflect current state
-            ((Label) availableStat.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
-            ((Label) borrowedStat.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
-        };
+        sorted.comparatorProperty().bind(catalogTable.comparatorProperty());
+        catalogTable.setItems(sorted);
 
         VBox filters = buildCatalogFilters(filtered);
-        VBox availableActions = buildAvailableActions(availableTable, refreshRecommendations);
-
-        Label availableTitle = new Label("Catalog & Availability");
-        availableTitle.getStyleClass().add("card-title");
-        VBox left = new VBox(12, availableTitle, filters, availableTable, availableActions);
-        left.getStyleClass().add("card");
-        left.setPadding(new Insets(16));
-
-        TableView<Book> borrowedTable = buildBorrowedBooksTable();
-
-        Label returnMessage = new Label();
-        returnMessage.getStyleClass().add("form-message");
-
-        Button returnButton = new Button("Return Selected Book");
-        returnButton.getStyleClass().add("danger-button");
-        returnButton.setOnAction(event -> {
-            // Get the currently selected book from the borrowed books table
-            Book selected = borrowedTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                returnMessage.setText("Please select a book to return.");
-                returnMessage.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            
-            // Show a confirmation dialog with book details and original borrow date
-            if (showReturnConfirmation(selected)) {
-                // Process the book return through the data store
-                // This updates the book status back to available and clears the borrow record
-                DataStore.ActionResult result = dataStore.returnBook(selected.getId(), currentUser.getUsername());
-                if (!result.success()) {
-                    returnMessage.setText(result.message());
-                    returnMessage.getStyleClass().setAll("form-message", "error-text");
-                    return;
-                }
-                
-                // Refresh the borrowed books list and update dashboard statistics
-                dataStore.getBorrowedBooksBy(currentUser.getUsername());
-                ((Label) availableStat.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
-                ((Label) borrowedStat.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
-                refreshRecommendations.run();
-                
-                returnMessage.setText("Book returned successfully.");
-                returnMessage.getStyleClass().setAll("form-message", "success-text");
-            }
+        VBox borrowActions = buildBorrowActions(catalogTable, () -> {
+            ((Label) statsA.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
+            ((Label) statsB.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
         });
 
-        VBox returnActions = new VBox(8, returnButton, returnMessage);
+        TableView<Book> borrowedTable = buildBorrowedBooksTable();
+        borrowedTable.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        VBox borrowedActions = buildBorrowedActions(borrowedTable, () -> {
+            borrowedTable.setItems(dataStore.getBorrowedBooksBy(currentUser.getUsername()));
+            ((Label) statsA.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
+            ((Label) statsB.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
+        });
 
-        Label borrowedTitle = new Label("My Borrowed Books");
-        borrowedTitle.getStyleClass().add("card-title");
-        VBox borrowedCard = new VBox(12, borrowedTitle, borrowedTable, returnActions);
-        borrowedCard.getStyleClass().add("card");
-        borrowedCard.setPadding(new Insets(16));
-
-        ListView<Book> recommendations = buildRecommendationList(recommendationItems, availableTable);
-        Button refreshRec = new Button("Refresh Recommendations");
-        refreshRec.getStyleClass().add("secondary-button");
-        refreshRec.setOnAction(event -> refreshRecommendations.run());
-
-        Label recTitle = new Label("Recommended for You");
-        recTitle.getStyleClass().add("card-title");
-        VBox recCard = new VBox(12, recTitle, recommendations, refreshRec);
-        recCard.getStyleClass().add("card");
-        recCard.setPadding(new Insets(16));
-
-        VBox right = new VBox(16, borrowedCard, recCard);
+        VBox left = new VBox(10, new Label("Catalog"), filters, catalogTable, borrowActions);
+        left.getStyleClass().add("card");
+        left.setPadding(new Insets(14));
         HBox.setHgrow(left, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.NEVER);
 
-        HBox content = new HBox(16, left, right);
-        content.setPadding(new Insets(24));
+        VBox right = new VBox(10, new Label("My Borrowed Books"), borrowedTable, borrowedActions);
+        right.getStyleClass().add("card");
+        right.setPadding(new Insets(14));
+        right.setPrefWidth(470);
 
-        VBox body = new VBox(16, stats, content);
-        body.setPadding(new Insets(0, 24, 24, 24));
+        HBox bodyRow = new HBox(12, left, right);
+        VBox body = new VBox(14, stats, bodyRow);
+        body.setPadding(new Insets(0, 20, 20, 20));
 
-        BorderPane layout = new BorderPane();
-        layout.setTop(title);
-        BorderPane.setMargin(title, new Insets(24, 24, 12, 24));
-        layout.setCenter(body);
-        return layout;
+        BorderPane pane = new BorderPane(body);
+        pane.setTop(title);
+        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        return pane;
     }
 
     private TableView<Book> buildAvailableBooksTable() {
         TableView<Book> table = new TableView<>();
-        TableColumn<Book, String> titleColumn = buildColumn("Title", Book::getTitle, 170);
-        titleColumn.setCellFactory(column -> new TableCell<>() {
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                getStyleClass().remove("unavailable-title");
-                if (empty || item == null) {
-                    setText(null);
-                } else {
-                    setText(item);
-                    Book book = getTableRow() == null ? null : getTableRow().getItem();
-                    if (book != null && !book.isAvailable()) {
-                        getStyleClass().add("unavailable-title");
-                    }
-                }
-            }
-        });
-
-        table.setRowFactory(tv -> new TableRow<>() {
-            @Override
-            protected void updateItem(Book item, boolean empty) {
-                super.updateItem(item, empty);
-                getStyleClass().remove("unavailable-row");
-                if (!empty && item != null && !item.isAvailable()) {
-                    getStyleClass().add("unavailable-row");
-                }
-            }
-        });
-
         table.getColumns().addAll(
-                titleColumn,
-                buildColumn("Author", Book::getAuthorFullName, 140),
-                buildColumn("Genres", Book::getGenre, 120),
-                buildColumn("Publish Date", book -> formatDate(book.getApprovedDate()), 120),
-                buildColumn("Status", book -> book.getStatus().getDisplayName(), 130),
-                buildColumn("Summary", Book::getDescription, 280)
+                col("Title", Book::getTitle, 180),
+                col("Author", Book::getAuthorFullName, 150),
+                col("Genre", Book::getGenre, 120),
+                col("Publish Date", b -> formatDate(b.getApprovedDate()), 120),
+                col("Status", b -> b.getStatus().getDisplayName(), 130)
         );
-        table.setPlaceholder(new Label("No approved books yet."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        table.setPlaceholder(new Label("No books found."));
         return table;
     }
 
@@ -564,861 +346,1015 @@ public class App extends Application {
         TableView<Book> table = new TableView<>();
         table.setItems(dataStore.getBorrowedBooksBy(currentUser.getUsername()));
         table.getColumns().addAll(
-                buildColumn("Title", Book::getTitle, 180),
-                buildColumn("Author", Book::getAuthorFullName, 160),
-                buildColumn("Borrowed Date", book -> formatDate(book.getBorrowedDate()), 130),
-                buildColumn("Due Date", book -> formatDate(book.getDueDate()), 120)
+                col("Title", Book::getTitle, 170),
+                col("Borrow Date", b -> formatDate(b.getBorrowedDate()), 110),
+                col("Due Date", b -> formatDate(b.getDueDate()), 110),
+                col("Status", b -> b.getStatus().getDisplayName(), 120)
         );
-        table.setPlaceholder(new Label("You have not borrowed any books."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         return table;
     }
 
-    private VBox buildBorrowActions(TableView<Book> table) {
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
+    private VBox buildBorrowActions(TableView<Book> table, Runnable onRefresh) {
+        Label msg = new Label();
+        Spinner<Integer> days = new Spinner<>(dataStore.getMinBorrowDays(), dataStore.getMaxBorrowDays(), 14);
+        days.setEditable(true);
 
-        Button borrow = new Button("Borrow Selected Book");
-        borrow.getStyleClass().add("primary-button");
-        borrow.setOnAction(event -> {
+        Button quickPreview = new Button("Read / Preview");
+        quickPreview.getStyleClass().add("secondary-button");
+        quickPreview.setOnAction(e -> {
             Book selected = table.getSelectionModel().getSelectedItem();
             if (selected == null) {
-                message.setText("Please select a book to borrow.");
-                message.getStyleClass().setAll("form-message", "error-text");
+                setMessage(msg, "Please select a book.", false);
                 return;
             }
-            DataStore.ActionResult result = dataStore.borrowBook(selected.getId(), currentUser.getUsername());
-            if (!result.success()) {
-                message.setText(result.message());
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            message.setText("Book borrowed successfully.");
-            message.getStyleClass().setAll("form-message", "success-text");
+            showBookReader(selected, false);
         });
 
-        return new VBox(8, borrow, message);
+        Button borrowSelected = new Button("Borrow Selected");
+        borrowSelected.getStyleClass().add("primary-button");
+        borrowSelected.setOnAction(e -> {
+            List<Book> selected = table.getSelectionModel().getSelectedItems();
+            if (selected.isEmpty()) {
+                setMessage(msg, "Please select one or more books.", false);
+                return;
+            }
+            List<String> ids = selected.stream().map(Book::getId).collect(Collectors.toList());
+            DataStore.ActionResult r = dataStore.borrowBooks(ids, currentUser.getUsername(), days.getValue());
+            setMessage(msg, r.message(), r.success());
+            if (onRefresh != null) onRefresh.run();
+        });
+
+        HBox row = new HBox(8, new Label("Duration (days):"), days, quickPreview, borrowSelected);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return new VBox(8, row, msg);
     }
 
-    private VBox buildAvailableActions(TableView<Book> table, Runnable onBorrowSuccess) {
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
-
-        Button preview = new Button("Quick Preview");
-        preview.getStyleClass().add("secondary-button");
-        preview.setOnAction(event -> {
-            // Get the currently selected book from the table
-            Book selected = table.getSelectionModel().getSelectedItem();
+    private VBox buildBorrowedActions(TableView<Book> borrowedTable, Runnable onRefresh) {
+        Label msg = new Label();
+        Button readBtn = new Button("Read with Bookmark/Highlight");
+        readBtn.getStyleClass().add("secondary-button");
+        readBtn.setOnAction(e -> {
+            Book selected = borrowedTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
-                message.setText("Please select a book to preview.");
-                message.getStyleClass().setAll("form-message", "error-text");
+                setMessage(msg, "Please select a borrowed book.", false);
                 return;
             }
-            // Display a dialog showing the first 3 pages or text preview of the selected book
-            showQuickPreviewDialog(selected);
+            showBookReader(selected, true);
         });
 
-        Button summary = new Button("Read Summary");
-        summary.getStyleClass().add("secondary-button");
-        summary.setOnAction(event -> {
-            // Get the currently selected book from the table
-            Book selected = table.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                message.setText("Please select a book to read its summary.");
-                message.getStyleClass().setAll("form-message", "error-text");
+        Button returnSelected = new Button("Return Selected (Partial Return)");
+        returnSelected.getStyleClass().add("danger-button");
+        returnSelected.setOnAction(e -> {
+            List<Book> selected = borrowedTable.getSelectionModel().getSelectedItems();
+            if (selected.isEmpty()) {
+                setMessage(msg, "Select one or more books to return.", false);
                 return;
             }
-            // Display a dialog showing the full book summary/description
-            showSummaryDialog(selected);
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setHeaderText("Return " + selected.size() + " selected book(s)?");
+            if (alert.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+
+            List<String> ids = selected.stream().map(Book::getId).collect(Collectors.toList());
+            DataStore.ActionResult r = dataStore.returnBooks(ids, currentUser.getUsername());
+            setMessage(msg, r.message(), r.success());
+            if (onRefresh != null) onRefresh.run();
         });
 
-        Button borrow = new Button("Borrow Selected Book");
-        borrow.getStyleClass().add("primary-button");
-        borrow.setOnAction(event -> {
-            // Get the currently selected book from the catalog table
-            Book selected = table.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                message.setText("Please select a book to borrow.");
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            
-            // Check if the selected book is currently available (not already borrowed by someone else)
-            if (!selected.isAvailable()) {
-                message.setText("This book is not available right now.");
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            
-            // Show a confirmation dialog with book details and 14-day borrowing period
-            if (!showBorrowConfirmation(selected)) {
-                return;
-            }
-            
-            // Attempt to borrow the book through the data store
-            // This records the book ID, current user, and sets a 14-day due date
-            DataStore.ActionResult result = dataStore.borrowBook(selected.getId(), currentUser.getUsername());
-            if (!result.success()) {
-                message.setText(result.message());
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            
-            // If borrowing is successful, trigger the refresh callback to update dashboard statistics
-            if (onBorrowSuccess != null) {
-                onBorrowSuccess.run();
-            }
-            message.setText("Book borrowed successfully.");
-            message.getStyleClass().setAll("form-message", "success-text");
-        });
-
-        HBox actions = new HBox(10, preview, summary, borrow);
-        actions.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, actions, message);
+        HBox row = new HBox(8, readBtn, returnSelected);
+        return new VBox(8, row, msg);
     }
 
     private VBox buildCatalogFilters(FilteredList<Book> filtered) {
-        TextField searchField = new TextField();
-        searchField.setPromptText("Search title or author...");
+        TextField search = new TextField();
+        search.setPromptText("Search title or author...");
+        ComboBox<String> genre = new ComboBox<>();
+        genre.getItems().add("All");
+        genre.getItems().addAll(dataStore.getGenreOptions());
+        genre.getSelectionModel().selectFirst();
+        ComboBox<String> availability = new ComboBox<>();
+        availability.getItems().addAll("All", "Available", "Borrowed");
+        availability.getSelectionModel().selectFirst();
+        DatePicker date = new DatePicker();
+        date.setPromptText("Publish date");
 
-        ComboBox<String> genreBox = new ComboBox<>();
-        genreBox.getItems().add("All Genres");
-        genreBox.getItems().addAll(dataStore.getGenreOptions());
-        genreBox.getSelectionModel().selectFirst();
-
-        ComboBox<String> availabilityBox = new ComboBox<>();
-        availabilityBox.getItems().addAll("All", "Available", "Borrowed");
-        availabilityBox.getSelectionModel().selectFirst();
-
-        DatePicker publishDate = new DatePicker();
-        publishDate.setPromptText("Publish date");
-
-        // Define a lambda function that applies all active filters to the book catalog
-        Runnable applyFilter = () -> filtered.setPredicate(book -> {
-            if (book == null) {
-                return false;
+        Runnable apply = () -> filtered.setPredicate(book -> {
+            if (book == null) return false;
+            String q = search.getText() == null ? "" : search.getText().toLowerCase().trim();
+            if (!q.isBlank()) {
+                String t = safe(book.getTitle()).toLowerCase();
+                String a = safe(book.getAuthorFullName()).toLowerCase();
+                if (!t.contains(q) && !a.contains(q)) return false;
             }
-            
-            // Filter 1: Search by book title or author full name (case-insensitive substring matching)
-            String search = searchField.getText() == null ? "" : searchField.getText().trim().toLowerCase();
-            if (!search.isEmpty()) {
-                String title = book.getTitle() == null ? "" : book.getTitle().toLowerCase();
-                String author = book.getAuthorFullName() == null ? "" : book.getAuthorFullName().toLowerCase();
-                if (!title.contains(search) && !author.contains(search)) {
-                    return false;
-                }
+            if (!"All".equals(genre.getValue())) {
+                boolean ok = book.getGenres().stream().anyMatch(g -> g.equalsIgnoreCase(genre.getValue()));
+                if (!ok) return false;
             }
-            
-            // Filter 2: Filter by genre selection (multi-genre support)
-            String genre = genreBox.getValue();
-            if (genre != null && !"All Genres".equals(genre)) {
-                // Check if the book's genres list contains the selected genre
-                boolean match = book.getGenres().stream().anyMatch(item -> item.equalsIgnoreCase(genre));
-                if (!match) {
-                    return false;
-                }
-            }
-            
-            // Filter 3: Filter by availability status (Available or Borrowed)
-            String availability = availabilityBox.getValue();
-            if ("Available".equals(availability) && !book.isAvailable()) {
-                return false;
-            }
-            if ("Borrowed".equals(availability) && book.isAvailable()) {
-                return false;
-            }
-            
-            // Filter 4: Filter by exact publish/approval date
-            LocalDate filterDate = publishDate.getValue();
-            if (filterDate != null) {
-                LocalDate approved = book.getApprovedDate();
-                if (approved == null || !approved.equals(filterDate)) {
-                    return false;
-                }
-            }
+            if ("Available".equals(availability.getValue()) && !book.isAvailable()) return false;
+            if ("Borrowed".equals(availability.getValue()) && book.isAvailable()) return false;
+            if (date.getValue() != null && (book.getApprovedDate() == null || !date.getValue().equals(book.getApprovedDate()))) return false;
             return true;
         });
 
-        // Add listeners to all filter controls to trigger filter update whenever any filter changes
-        searchField.textProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
-        genreBox.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
-        availabilityBox.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
-        publishDate.valueProperty().addListener((obs, oldValue, newValue) -> applyFilter.run());
+        search.textProperty().addListener((a, b, c) -> apply.run());
+        genre.valueProperty().addListener((a, b, c) -> apply.run());
+        availability.valueProperty().addListener((a, b, c) -> apply.run());
+        date.valueProperty().addListener((a, b, c) -> apply.run());
 
-        // Clear button to reset all filters to their default state
-        Button clear = new Button("Clear Filters");
+        Button clear = new Button("Clear");
         clear.getStyleClass().add("ghost-button");
-        clear.setOnAction(event -> {
-            searchField.clear();
-            genreBox.getSelectionModel().selectFirst();
-            availabilityBox.getSelectionModel().selectFirst();
-            publishDate.setValue(null);
-            applyFilter.run();
+        clear.setOnAction(e -> {
+            search.clear();
+            genre.getSelectionModel().selectFirst();
+            availability.getSelectionModel().selectFirst();
+            date.setValue(null);
+            apply.run();
         });
 
-        HBox row = new HBox(10, searchField, genreBox, availabilityBox, publishDate, clear);
-        row.getStyleClass().add("filter-row");
-        HBox.setHgrow(searchField, Priority.ALWAYS);
+        HBox row = new HBox(8, search, genre, availability, date, clear);
+        row.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(search, Priority.ALWAYS);
 
-        Label hint = new Label("Filter by title, author, genre, publish date, and availability.");
-        hint.getStyleClass().add("muted-text");
-
-        return new VBox(8, row, hint);
+        VBox box = new VBox(8, row, new Label("Search/Filter by title, author, genre, publish date, availability."));
+        box.getStyleClass().add("aligned-block");
+        return box;
     }
 
-    private ListView<Book> buildRecommendationList(ObservableList<Book> items, TableView<Book> linkedTable) {
-        ListView<Book> listView = new ListView<>(items);
-        listView.getStyleClass().add("recommendation-list");
-        listView.setCellFactory(view -> new ListCell<>() {
-            @Override
-            protected void updateItem(Book item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                Label title = new Label(item.getTitle());
-                title.getStyleClass().add("card-title");
-                Label meta = new Label(item.getAuthorFullName() + " • " + item.getGenreDisplay());
-                meta.getStyleClass().add("muted-text");
-                VBox box = new VBox(2, title, meta);
-                setGraphic(box);
-            }
-        });
-        listView.setOnMouseClicked(event -> {
-            Book selected = listView.getSelectionModel().getSelectedItem();
-            if (selected != null && linkedTable != null) {
-                linkedTable.getSelectionModel().select(selected);
-                linkedTable.scrollTo(selected);
-            }
-        });
-        return listView;
-    }
-
-    private boolean showBorrowConfirmation(Book book) {
-        LocalDate dueDate = LocalDate.now().plusDays(14);
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Borrow Confirmation");
-        alert.setHeaderText("Confirm borrowing this book?");
-        alert.setContentText("Title: " + book.getTitle()
-                + "\nBorrow duration: 14 days"
-                + "\nDue date: " + dueDate
-                + "\nAvailability: " + book.getStatus().getDisplayName());
-        Optional<ButtonType> result = alert.showAndWait();
-        return result.isPresent() && result.get() == ButtonType.OK;
-    }
-
-    private boolean showReturnConfirmation(Book book) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Return Confirmation");
-        alert.setHeaderText("Confirm returning this book?");
-        alert.setContentText("Title: " + book.getTitle()
-                + "\nAuthor: " + book.getAuthorFullName()
-                + "\nGenre: " + book.getGenreDisplay()
-                + "\nBorrowed on: " + formatDate(book.getBorrowedDate())
-                + "\nDue date: " + formatDate(book.getDueDate()));
-        Optional<ButtonType> result = alert.showAndWait();
-        return result.isPresent() && result.get() == ButtonType.OK;
-    }
-
-    private void showSummaryDialog(Book book) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Book Summary");
-        alert.setHeaderText(book.getTitle());
-        TextArea area = new TextArea(book.getDescription());
-        area.setWrapText(true);
-        area.setEditable(false);
-        area.setPrefRowCount(10);
-        alert.getDialogPane().setContent(area);
-        alert.showAndWait();
-    }
-
-    private void showQuickPreviewDialog(Book book) {
-        String filePath = book.getFilePath();
-        if (filePath != null && filePath.toLowerCase().endsWith(".pdf")) {
-            showPdfPreviewDialog(book);
+    private void showBookReader(Book book, boolean saveProgress) {
+        if (saveProgress && book.getDueDate() != null && LocalDate.now().isAfter(book.getDueDate())) {
+            Alert a = new Alert(Alert.AlertType.WARNING, "Borrow period expired. The book has been auto-returned.");
+            a.showAndWait();
+            dataStore.autoReturnExpiredBooks();
+            showDashboard(currentUser, "Dashboard");
             return;
         }
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Quick Preview");
-        alert.setHeaderText(book.getTitle());
-        TextArea area = new TextArea(readPreviewText(filePath, 30));
-        area.setWrapText(true);
-        area.setEditable(false);
-        area.setPrefRowCount(12);
-        alert.getDialogPane().setContent(area);
-        alert.showAndWait();
-    }
 
-    private void showPdfPreviewDialog(Book book) {
-        String filePath = book.getFilePath();
-        if (filePath == null || filePath.isBlank() || filePath.startsWith("seed://")) {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "This item has no local PDF attached.");
-            alert.showAndWait();
+        String filePath = safe(book.getFilePath()).trim();
+        if (filePath.isBlank() || !filePath.toLowerCase().endsWith(".pdf") || !Files.exists(Path.of(filePath))) {
+            Alert info = new Alert(Alert.AlertType.INFORMATION,
+                    "This book does not have a readable local PDF file.\nPath: " + filePath);
+            info.showAndWait();
             return;
         }
-        List<Image> pages = renderPdfPreview(filePath, 3);
+
+        List<Image> pages = renderPdfPages(filePath);
         if (pages.isEmpty()) {
-            Alert alert = new Alert(Alert.AlertType.ERROR, "Unable to render PDF preview. Please open the file directly.");
-            alert.showAndWait();
+            new Alert(Alert.AlertType.ERROR, "Unable to load this PDF.").showAndWait();
             return;
         }
 
-        Pagination pagination = new Pagination(pages.size(), 0);
-        pagination.setPageFactory(index -> {
-            Image image = pages.get(index);
-            ImageView view = new ImageView(image);
-            view.setPreserveRatio(true);
-            view.setFitWidth(560);
-            ScrollPane scroll = new ScrollPane(view);
-            scroll.setFitToWidth(true);
-            scroll.setPannable(true);
-            scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-            scroll.getStyleClass().add("page-scroll");
-            return scroll;
+        int savedPage = Math.max(1, dataStore.getBookmark(currentUser.getUsername(), book.getId()));
+        int initialPage = Math.min(saveProgress ? savedPage : 1, pages.size());
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("PDF Reader - " + book.getTitle());
+        dialog.setHeaderText(saveProgress
+                ? "Read directly on PDF pages (bookmark + highlight enabled)"
+                : "Preview mode (read directly on PDF pages)");
+
+        Label pageIndicator = new Label();
+        Label pageHighlightInfo = new Label();
+        Label textHighlightInfo = new Label();
+        updateHighlightInfo(pageHighlightInfo, book.getId());
+        updateTextHighlightInfo(textHighlightInfo, book.getId());
+
+        Pagination pagination = new Pagination(pages.size(), initialPage - 1);
+        pagination.getStyleClass().add("pdf-pagination");
+        pagination.setPageFactory(index -> buildPdfPageView(pages.get(index), index + 1, pageIndicator));
+        updatePageIndicator(pageIndicator, initialPage, pages.size());
+
+        pagination.currentPageIndexProperty().addListener((obs, oldV, newV) -> {
+            int currentPage = newV.intValue() + 1;
+            updatePageIndicator(pageIndicator, currentPage, pages.size());
+            if (saveProgress) {
+                dataStore.saveBookmark(currentUser.getUsername(), book.getId(), currentPage);
+            }
         });
 
-        VBox content = new VBox(10, pagination, new Label("Showing first " + pages.size() + " pages"));
-        content.setPadding(new Insets(8));
+        Button prev = new Button("Previous");
+        prev.getStyleClass().add("secondary-button");
+        prev.setOnAction(e -> {
+            int current = pagination.getCurrentPageIndex();
+            if (current > 0) pagination.setCurrentPageIndex(current - 1);
+        });
 
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("PDF Preview");
-        alert.setHeaderText(book.getTitle());
-        alert.getDialogPane().setContent(content);
-        alert.getDialogPane().setMinHeight(420);
-        alert.getDialogPane().setMinWidth(620);
-        alert.showAndWait();
+        Button next = new Button("Next");
+        next.getStyleClass().add("secondary-button");
+        next.setOnAction(e -> {
+            int current = pagination.getCurrentPageIndex();
+            if (current < pages.size() - 1) pagination.setCurrentPageIndex(current + 1);
+        });
+
+        Button addPageHighlight = new Button("Highlight Current Page");
+        addPageHighlight.getStyleClass().add("primary-button");
+        addPageHighlight.setDisable(!saveProgress);
+        addPageHighlight.setOnAction(e -> {
+            int currentPage = pagination.getCurrentPageIndex() + 1;
+            dataStore.addHighlight(currentUser.getUsername(), book.getId(), currentPage);
+            updateHighlightInfo(pageHighlightInfo, book.getId());
+        });
+
+        TextArea textHighlightInput = new TextArea();
+        textHighlightInput.setPromptText("Paste selected text/snippet to highlight and save for your record...");
+        textHighlightInput.setPrefRowCount(2);
+        textHighlightInput.setWrapText(true);
+        textHighlightInput.setDisable(!saveProgress);
+
+        Button addTextHighlight = new Button("Save Text Highlight");
+        addTextHighlight.getStyleClass().add("secondary-button");
+        addTextHighlight.setDisable(!saveProgress);
+        addTextHighlight.setOnAction(e -> {
+            String snippet = textHighlightInput.getText() == null ? "" : textHighlightInput.getText().trim();
+            if (snippet.isBlank()) {
+                return;
+            }
+            dataStore.addTextHighlight(currentUser.getUsername(), book.getId(), snippet);
+            textHighlightInput.clear();
+            updateTextHighlightInfo(textHighlightInfo, book.getId());
+        });
+
+        Button refreshHighlights = new Button("Refresh Highlights");
+        refreshHighlights.getStyleClass().add("secondary-button");
+        refreshHighlights.setOnAction(e -> {
+            updateHighlightInfo(pageHighlightInfo, book.getId());
+            updateTextHighlightInfo(textHighlightInfo, book.getId());
+        });
+
+        HBox toolbar = new HBox(10, prev, next, pageIndicator, addPageHighlight, refreshHighlights);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.getStyleClass().add("pdf-toolbar");
+
+        HBox textHighlightActions = new HBox(8, addTextHighlight);
+        textHighlightActions.setAlignment(Pos.CENTER_LEFT);
+        textHighlightActions.getStyleClass().add("aligned-block");
+
+        VBox content = new VBox(10, toolbar, pagination, pageHighlightInfo, textHighlightInput, textHighlightActions, textHighlightInfo);
+        content.setPadding(new Insets(12));
+        content.setPrefSize(900, 700);
+        content.getStyleClass().add("pdf-reader-card");
+
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CLOSE);
+        dialog.getDialogPane().setPrefSize(980, 780);
+
+        dialog.showAndWait();
+        if (saveProgress) {
+            int currentPage = pagination.getCurrentPageIndex() + 1;
+            dataStore.saveBookmark(currentUser.getUsername(), book.getId(), currentPage);
+            saveSession("Reader", book.getId());
+        }
     }
 
-    private List<Image> renderPdfPreview(String filePath, int maxPages) {
-        // Convert the file path string to a Path object for file system operations
-        Path path = Path.of(filePath);
-        
-        // Verify that the file exists at the specified path
-        if (!Files.exists(path)) {
-            return List.of();
-        }
-        
+    private javafx.scene.Node buildPdfPageView(Image pageImage, int pageNumber, Label pageIndicator) {
+        ImageView view = new ImageView(pageImage);
+        view.setPreserveRatio(true);
+        view.setFitWidth(820);
+        view.getStyleClass().add("pdf-page-image");
+
+        StackPane centered = new StackPane(view);
+        centered.setPadding(new Insets(10));
+        centered.getStyleClass().add("pdf-page-wrap");
+
+        ScrollPane scroll = new ScrollPane(centered);
+        scroll.setFitToWidth(true);
+        scroll.setPannable(true);
+        scroll.getStyleClass().add("page-scroll");
+
+        pageIndicator.setText("Page " + pageNumber);
+        return scroll;
+    }
+
+    private List<Image> renderPdfPages(String filePath) {
         List<Image> images = new ArrayList<>();
-        try (PDDocument document = PDDocument.load(path.toFile())) {
-            // Create a PDF renderer with the loaded document
+        try (PDDocument document = PDDocument.load(Path.of(filePath).toFile())) {
             PDFRenderer renderer = new PDFRenderer(document);
-            
-            // Calculate the actual number of pages to render (limit to maxPages)
-            int pageCount = Math.min(document.getNumberOfPages(), maxPages);
-            
-            // Render each page to a BufferedImage at 140 DPI and convert to JavaFX Image
-            for (int i = 0; i < pageCount; i++) {
-                // renderImageWithDPI renders the page at the specified resolution
-                // ImageType.RGB ensures color output
-                BufferedImage buffered = renderer.renderImageWithDPI(i, 140, ImageType.RGB);
-                // Convert AWT BufferedImage to JavaFX Image for display
+            int total = document.getNumberOfPages();
+            for (int i = 0; i < total; i++) {
+                BufferedImage buffered = renderer.renderImageWithDPI(i, 130, ImageType.RGB);
                 images.add(SwingFXUtils.toFXImage(buffered, null));
             }
         } catch (IOException ex) {
-            // Return empty list if PDF loading or rendering fails
             return List.of();
         }
         return images;
     }
 
-    private String readPreviewText(String filePath, int maxLines) {
-        if (filePath == null || filePath.isBlank() || filePath.startsWith("seed://")) {
-            return "No preview available for this item.";
-        }
-        Path path = Path.of(filePath);
-        if (!Files.exists(path)) {
-            return "File not found: " + filePath;
-        }
-        String lower = filePath.toLowerCase();
-        if (lower.endsWith(".pdf") || lower.endsWith(".doc") || lower.endsWith(".docx")) {
-            return "Preview not supported for this file type. Use Open File to view the document.";
-        }
-        StringBuilder builder = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new FileReader(path.toFile()))) {
-            String line;
-            int count = 0;
-            while ((line = reader.readLine()) != null && count < maxLines) {
-                builder.append(line).append("\n");
-                count++;
-            }
-        } catch (IOException ex) {
-            return "Unable to read preview: " + ex.getMessage();
-        }
-        String preview = builder.toString().trim();
-        return preview.isEmpty() ? "Preview is empty." : preview;
+    private void updatePageIndicator(Label label, int current, int total) {
+        label.setText("Page " + current + " / " + total);
+        label.getStyleClass().setAll("toolbar-chip");
     }
 
-    private void openBookFile(String filePath) {
-        if (filePath == null || filePath.isBlank() || filePath.startsWith("seed://")) {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION, "This item has no local file attached.");
-            alert.showAndWait();
-            return;
+    private void updateHighlightInfo(Label label, String bookId) {
+        Set<Integer> pages = dataStore.getHighlights(currentUser.getUsername(), bookId);
+        String text = pages.isEmpty() ? "Highlighted pages: none" : "Highlighted pages: " + pages;
+        label.setText(text);
+        label.getStyleClass().setAll("muted-text");
+    }
+
+    private void updateTextHighlightInfo(Label label, String bookId) {
+        List<String> snippets = dataStore.getTextHighlights(currentUser.getUsername(), bookId);
+        if (snippets.isEmpty()) {
+            label.setText("Text highlights: none");
+        } else {
+            int shown = Math.min(3, snippets.size());
+            String latest = snippets.subList(snippets.size() - shown, snippets.size())
+                    .stream()
+                    .map(s -> "• " + s)
+                    .collect(Collectors.joining("\n"));
+            label.setText("Text highlights (latest " + shown + "):\n" + latest);
         }
-        if (!Desktop.isDesktopSupported()) {
-            Alert alert = new Alert(Alert.AlertType.ERROR, "Desktop integration is not supported on this system.");
-            alert.showAndWait();
-            return;
-        }
-        try {
-            Desktop.getDesktop().open(Path.of(filePath).toFile());
-        } catch (IOException ex) {
-            Alert alert = new Alert(Alert.AlertType.ERROR, "Unable to open file: " + ex.getMessage());
-            alert.showAndWait();
-        }
+        label.getStyleClass().setAll("muted-text");
     }
 
     private BorderPane buildAuthorDashboard() {
         Label title = new Label("Author Dashboard");
         title.getStyleClass().add("section-title");
 
-        List<Book> myBooks = dataStore.getBooksByAuthor(currentUser.getUsername());
-        long pendingCount = myBooks.stream().filter(book -> book.getStatus() == BookStatus.PENDING_APPROVAL).count();
-        long approvedCount = myBooks.stream().filter(book -> book.getStatus() == BookStatus.APPROVED_AVAILABLE).count();
-        long rejectedCount = myBooks.stream().filter(book -> book.getStatus() == BookStatus.REJECTED).count();
-        HBox stats = buildStatsRow(
-                buildStatCard("Submissions", String.valueOf(myBooks.size()), "accent-teal"),
-                buildStatCard("Approved", String.valueOf(approvedCount), "accent-gold"),
-                buildStatCard("Rejected", String.valueOf(rejectedCount), "accent-slate")
-        );
+        VBox left = buildAuthorPublishForm();
+        TableView<Book> table = buildAuthorSubmissionsTable();
+        VBox actions = buildAuthorActions(table);
 
-        VBox form = buildAuthorPublishForm();
-        TableView<Book> submissions = buildAuthorSubmissionsTable();
-
-        Label submissionsTitle = new Label("My Submissions");
-        submissionsTitle.getStyleClass().add("card-title");
-        VBox right = new VBox(12, submissionsTitle, submissions);
+        VBox right = new VBox(10, new Label("Published / Submitted Books"), table, actions);
+        right.setPadding(new Insets(14));
         right.getStyleClass().add("card");
-        right.setPadding(new Insets(16));
         HBox.setHgrow(right, Priority.ALWAYS);
 
-        HBox content = new HBox(16, form, right);
-        content.setPadding(new Insets(24));
+        HBox bodyRow = new HBox(12, left, right);
+        bodyRow.setPadding(new Insets(0, 20, 20, 20));
 
-        VBox body = new VBox(16, stats, content);
-        body.setPadding(new Insets(0, 24, 24, 24));
-
-        ScrollPane scrollPane = new ScrollPane(body);
-        scrollPane.setFitToWidth(true);
-        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-        scrollPane.getStyleClass().add("page-scroll");
-
-        BorderPane layout = new BorderPane();
-        layout.setTop(title);
-        BorderPane.setMargin(title, new Insets(24, 24, 12, 24));
-        layout.setCenter(scrollPane);
-        return layout;
+        BorderPane pane = new BorderPane(bodyRow);
+        pane.setTop(title);
+        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        return pane;
     }
 
     private VBox buildAuthorPublishForm() {
-        Label formTitle = new Label("Publish New Book");
-        formTitle.getStyleClass().add("card-title");
+        Label t = new Label("Publish New Book");
+        t.getStyleClass().add("card-title");
 
-        Label helper = new Label("Provide the details shown to students: title, genres, and summary. A book file is required for review.");
-        helper.getStyleClass().add("muted-text");
-        helper.setWrapText(true);
+        TextField title = new TextField();
+        TextArea summary = new TextArea();
+        summary.setPrefRowCount(4);
+        TextField filePath = new TextField();
+        filePath.setEditable(false);
+        TextField coverPath = new TextField();
+        coverPath.setEditable(false);
 
-        TextField titleField = new TextField();
-        TextArea descriptionArea = new TextArea();
-        descriptionArea.setPrefRowCount(5);
-        descriptionArea.setWrapText(true);
-        TextField fileField = new TextField();
-        fileField.setEditable(false);
-        fileField.setOnKeyPressed(event -> {
-            if (event.getCode() == javafx.scene.input.KeyCode.BACK_SPACE
-                    || event.getCode() == javafx.scene.input.KeyCode.DELETE) {
-                fileField.clear();
-            }
-        });
-
-        FlowPane genrePane = new FlowPane();
-        genrePane.setHgap(8);
-        genrePane.setVgap(6);
+        FlowPane genrePane = new FlowPane(8, 8);
         List<CheckBox> genreChecks = new ArrayList<>();
-        for (String genre : dataStore.getGenreOptions()) {
-            CheckBox checkBox = new CheckBox(genre);
-            checkBox.getStyleClass().add("chip");
-            genreChecks.add(checkBox);
-            genrePane.getChildren().add(checkBox);
+        for (String g : dataStore.getGenreOptions()) {
+            CheckBox cb = new CheckBox(g);
+            genreChecks.add(cb);
+            genrePane.getChildren().add(cb);
         }
 
-        Button browse = new Button("Choose File");
-        browse.getStyleClass().add("secondary-button");
-        browse.setOnAction(event -> {
-            FileChooser chooser = new FileChooser();
-            chooser.setTitle("Select Book File");
-            File file = chooser.showOpenDialog(stage);
-            if (file != null) {
-                fileField.setText(file.getAbsolutePath());
+        Button pickFile = new Button("Choose Book File");
+        pickFile.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            File f = fc.showOpenDialog(stage);
+            if (f != null) filePath.setText(f.getAbsolutePath());
+        });
+
+        Button pickCover = new Button("Upload Cover (Optional)");
+        pickCover.setOnAction(e -> {
+            FileChooser fc = new FileChooser();
+            fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"));
+            File f = fc.showOpenDialog(stage);
+            if (f != null) {
+                if (f.length() > 3 * 1024 * 1024) {
+                    coverPath.setText("");
+                    new Alert(Alert.AlertType.ERROR, "Cover image too large (max 3MB).").showAndWait();
+                    return;
+                }
+                coverPath.setText(f.getAbsolutePath());
             }
         });
 
-        Label draftStatus = new Label("Draft not saved yet.");
-        draftStatus.getStyleClass().add("muted-text");
+        AuthorDraft draft = dataStore.getDraft(currentUser.getUsername());
+        if (draft != null) {
+            title.setText(draft.getTitle());
+            summary.setText(draft.getDescription());
+            filePath.setText(draft.getFilePath());
+            genreChecks.forEach(cb -> cb.setSelected(draft.getGenres().contains(cb.getText())));
+        }
 
-        // PauseTransition is used to implement auto-save with a 2-second delay
-        // This prevents excessive file writes while the user is still typing
-        PauseTransition autoSave = new PauseTransition(Duration.seconds(2));
-        Runnable triggerSave = () -> {
-            autoSave.stop();
-            autoSave.playFromStart();
-        };
-        autoSave.setOnFinished(event -> {
-            // When the 2-second pause is complete, save the current form data as a draft
-            AuthorDraft draft = buildDraftFromForm(titleField, descriptionArea, fileField, genreChecks);
-            dataStore.saveDraft(currentUser.getUsername(), draft);
-            // Update the UI to show the last auto-save timestamp
-            draftStatus.setText("Draft auto-saved at " + formatDateTime(draft.getLastSaved()));
+        Label msg = new Label();
+        Button saveDraft = new Button("Save Draft");
+        saveDraft.setOnAction(e -> {
+            AuthorDraft d = new AuthorDraft();
+            d.setTitle(title.getText().trim());
+            d.setDescription(summary.getText().trim());
+            d.setFilePath(filePath.getText().trim());
+            d.setGenres(genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList()));
+            dataStore.saveDraft(currentUser.getUsername(), d);
+            setMessage(msg, "Draft saved.", true);
         });
-
-        // Add listeners to all form fields to trigger auto-save when content changes
-        titleField.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
-        descriptionArea.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
-        fileField.textProperty().addListener((obs, oldValue, newValue) -> triggerSave.run());
-        genreChecks.forEach(checkBox -> checkBox.selectedProperty().addListener((obs, oldValue, newValue) -> triggerSave.run()));
-
-        GridPane grid = buildFormGrid();
-        grid.addRow(0, buildFormLabel("Book Title (shown in catalog)"), titleField);
-        grid.addRow(1, buildFormLabel("Author Name (auto-filled)"), new Label(currentUser.getFullName()));
-        grid.addRow(2, buildFormLabel("Genres (multi-select)"), genrePane);
-        grid.addRow(3, buildFormLabel("Summary (shown to readers)"), descriptionArea);
-
-        HBox fileRow = new HBox(8, fileField, browse);
-        HBox.setHgrow(fileField, Priority.ALWAYS);
-        grid.addRow(4, buildFormLabel("Book File (PDF)"), fileRow);
-
-        Button preview = new Button("Preview Details");
-        preview.getStyleClass().add("secondary-button");
-        preview.setOnAction(event -> showAuthorPreviewDialog(titleField, descriptionArea, fileField, genreChecks));
 
         Button submit = new Button("Submit for Approval");
         submit.getStyleClass().add("primary-button");
-
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
-
-        submit.setOnAction(event -> {
-            // Collect all selected genres from the multi-select checkboxes
-            List<String> genres = collectGenres(genreChecks);
-            
-            // Submit the book to the data store with all required information
-            // The book status is set to PENDING_APPROVAL and will be reviewed by a librarian
-            DataStore.ActionResult result = dataStore.submitBook(
-                    titleField.getText().trim(),
+        submit.setOnAction(e -> {
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            DataStore.ActionResult r = dataStore.submitBook(
+                    title.getText().trim(),
                     currentUser.getUsername(),
                     currentUser.getFullName(),
                     genres,
-                    descriptionArea.getText().trim(),
-                    fileField.getText().trim()
+                    summary.getText().trim(),
+                    filePath.getText().trim()
             );
-            
-            if (!result.success()) {
-                message.setText(result.message());
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
+            setMessage(msg, r.message(), r.success());
+            if (r.success()) {
+                title.clear(); summary.clear(); filePath.clear(); coverPath.clear(); genreChecks.forEach(cb -> cb.setSelected(false));
+                dataStore.clearDraft(currentUser.getUsername());
+                root.setCenter(buildAuthorDashboard());
             }
-            
-            // Clear all form fields after successful submission
-            titleField.clear();
-            descriptionArea.clear();
-            fileField.clear();
-            genreChecks.forEach(checkBox -> checkBox.setSelected(false));
-            
-            // Clear the draft from storage since it has been successfully submitted
-            dataStore.clearDraft(currentUser.getUsername());
-            draftStatus.setText("Draft cleared after submission.");
-            
-            message.setText("Book submitted and pending librarian approval.");
-            message.getStyleClass().setAll("form-message", "success-text");
         });
 
-        loadDraftIntoForm(titleField, descriptionArea, fileField, genreChecks, draftStatus);
+        HBox fileRow = new HBox(8, filePath, pickFile);
+        HBox.setHgrow(filePath, Priority.ALWAYS);
+        fileRow.setAlignment(Pos.CENTER_LEFT);
 
-        HBox buttons = new HBox(10, preview, submit);
-        VBox form = new VBox(12, formTitle, helper, grid, draftStatus, buttons, message);
-        form.getStyleClass().add("card");
-        form.setPadding(new Insets(16));
-        form.setPrefWidth(420);
-        return form;
+        HBox coverRow = new HBox(8, coverPath, pickCover);
+        HBox.setHgrow(coverPath, Priority.ALWAYS);
+        coverRow.setAlignment(Pos.CENTER_LEFT);
+
+        GridPane g = formGrid();
+        int r = 0;
+        g.addRow(r++, formLabel("Title"), title);
+        g.addRow(r++, formLabel("Genres"), genrePane);
+        g.addRow(r++, formLabel("Summary"), summary);
+        g.addRow(r++, formLabel("Book File"), fileRow);
+        g.addRow(r++, formLabel("Cover Image"), coverRow);
+
+        VBox box = new VBox(10, t, g, new HBox(8, saveDraft, submit), msg);
+        box.setPadding(new Insets(14));
+        box.getStyleClass().add("card");
+        box.setPrefWidth(460);
+        return box;
     }
 
     private TableView<Book> buildAuthorSubmissionsTable() {
         TableView<Book> table = new TableView<>();
         table.setItems(dataStore.getBooksByAuthor(currentUser.getUsername()));
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         table.getColumns().addAll(
-                buildColumn("Title", Book::getTitle, 200),
-                buildColumn("Genre", Book::getGenre, 120),
-                buildColumn("Submitted", book -> formatDate(book.getSubmittedDate()), 140),
-                buildColumn("Status", book -> book.getStatus().getDisplayName(), 160)
+                col("Title", Book::getTitle, 170),
+                col("Genre", Book::getGenre, 120),
+                col("Status", b -> b.getStatus().getDisplayName(), 130),
+                col("Submitted", b -> formatDate(b.getSubmittedDate()), 110)
         );
-        table.setPlaceholder(new Label("No submissions yet."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         return table;
     }
 
-    private void loadDraftIntoForm(TextField titleField,
-                                   TextArea descriptionArea,
-                                   TextField fileField,
-                                   List<CheckBox> genreChecks,
-                                   Label draftStatus) {
-        AuthorDraft draft = dataStore.getDraft(currentUser.getUsername());
-        if (draft == null) {
-            return;
-        }
-        titleField.setText(draft.getTitle());
-        descriptionArea.setText(draft.getDescription());
-        fileField.setText(draft.getFilePath());
-        for (CheckBox checkBox : genreChecks) {
-            checkBox.setSelected(draft.getGenres().contains(checkBox.getText()));
-        }
-        if (draft.getLastSaved() != null) {
-            draftStatus.setText("Draft restored (saved at " + formatDateTime(draft.getLastSaved()) + ")");
-        }
+    private VBox buildAuthorActions(TableView<Book> table) {
+        Label msg = new Label();
+
+        Button read = new Button("Read Selected");
+        read.setOnAction(e -> {
+            Book b = table.getSelectionModel().getSelectedItem();
+            if (b == null) { setMessage(msg, "Select one book.", false); return; }
+            showBookReader(b, false);
+        });
+
+        Button edit = new Button("Edit Selected");
+        edit.setOnAction(e -> {
+            Book b = table.getSelectionModel().getSelectedItem();
+            if (b == null) { setMessage(msg, "Select one book.", false); return; }
+            if (b.getStatus() == BookStatus.BORROWED) { setMessage(msg, "Borrowed books cannot be edited now.", false); return; }
+            showAuthorEditDialog(b, msg);
+        });
+
+        Button delete = new Button("Delete Selected");
+        delete.getStyleClass().add("danger-button");
+        delete.setOnAction(e -> {
+            List<Book> selected = table.getSelectionModel().getSelectedItems();
+            if (selected.isEmpty()) { setMessage(msg, "Select one or more books.", false); return; }
+            if (new Alert(Alert.AlertType.CONFIRMATION, "Delete " + selected.size() + " selected books?").showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            DataStore.ActionResult r = dataStore.bulkDeleteBooks(selected.stream().map(Book::getId).collect(Collectors.toList()), currentUser.getUsername());
+            setMessage(msg, r.message(), r.success());
+            root.setCenter(buildAuthorDashboard());
+        });
+
+        return new VBox(8, new HBox(8, read, edit, delete), msg);
     }
 
-    private AuthorDraft buildDraftFromForm(TextField titleField,
-                                           TextArea descriptionArea,
-                                           TextField fileField,
-                                           List<CheckBox> genreChecks) {
-        AuthorDraft draft = new AuthorDraft();
-        draft.setTitle(titleField.getText().trim());
-        draft.setDescription(descriptionArea.getText().trim());
-        draft.setFilePath(fileField.getText().trim());
-        draft.setGenres(collectGenres(genreChecks));
-        return draft;
-    }
-
-    private List<String> collectGenres(List<CheckBox> genreChecks) {
-        List<String> genres = new ArrayList<>();
-        for (CheckBox checkBox : genreChecks) {
-            if (checkBox.isSelected()) {
-                genres.add(checkBox.getText());
-            }
+    private void showAuthorEditDialog(Book book, Label msg) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Edit Book");
+        TextField title = new TextField(book.getTitle());
+        TextArea summary = new TextArea(book.getDescription());
+        GridPane g = formGrid();
+        g.addRow(0, formLabel("Title"), title);
+        g.addRow(1, formLabel("Summary"), summary);
+        d.getDialogPane().setContent(g);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            DataStore.ActionResult r = dataStore.updateBook(book.getId(), title.getText().trim(), null, summary.getText().trim());
+            setMessage(msg, r.message(), r.success());
+            root.setCenter(buildAuthorDashboard());
         }
-        return genres;
-    }
-
-    private void showAuthorPreviewDialog(TextField titleField,
-                                         TextArea descriptionArea,
-                                         TextField fileField,
-                                         List<CheckBox> genreChecks) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Preview Book Details");
-        alert.setHeaderText("Confirm your submission details");
-        String title = titleField.getText().trim();
-        String description = descriptionArea.getText().trim();
-        String filePath = fileField.getText().trim();
-        String genres = String.join(" / ", collectGenres(genreChecks));
-        TextArea area = new TextArea(
-                "Title: " + title
-                        + "\nAuthor: " + currentUser.getFullName()
-                        + "\nGenres: " + (genres.isBlank() ? "(none)" : genres)
-                        + "\nFile: " + (filePath.isBlank() ? "(not selected)" : filePath)
-                        + "\n\nSummary:\n" + description
-        );
-        area.setWrapText(true);
-        area.setEditable(false);
-        area.setPrefRowCount(12);
-        alert.getDialogPane().setContent(area);
-        alert.showAndWait();
     }
 
     private BorderPane buildLibrarianDashboard() {
         Label title = new Label("Librarian Dashboard");
         title.getStyleClass().add("section-title");
 
-        int pendingCount = dataStore.getPendingBooks().size();
-        int availableCount = dataStore.getAvailableBooks().size();
-        int userCount = dataStore.getAllUsers().size();
-        HBox stats = buildStatsRow(
-                buildStatCard("Pending Approvals", String.valueOf(pendingCount), "accent-teal"),
-                buildStatCard("Approved Books", String.valueOf(availableCount), "accent-gold"),
-                buildStatCard("Registered Users", String.valueOf(userCount), "accent-slate")
-        );
-
         TableView<Book> pendingTable = buildPendingTable();
-        VBox actions = buildApprovalActions(pendingTable);
-
-        Label pendingTitle = new Label("Pending Book Approvals");
-        pendingTitle.getStyleClass().add("card-title");
-        VBox card = new VBox(12, pendingTitle, pendingTable, actions);
-        card.getStyleClass().add("card");
-        card.setPadding(new Insets(16));
+        VBox approvalActions = buildApprovalActions(pendingTable);
 
         TableView<User> usersTable = buildUsersTable();
-        Label usersTitle = new Label("User Directory");
-        usersTitle.getStyleClass().add("card-title");
-        VBox usersCard = new VBox(12, usersTitle, usersTable);
-        usersCard.getStyleClass().add("card");
-        usersCard.setPadding(new Insets(16));
+        VBox userActions = buildUserActions(usersTable);
 
-        VBox body = new VBox(16, stats, card, usersCard);
-        body.setPadding(new Insets(0, 24, 24, 24));
+        TableView<Book> records = buildAllBorrowedBooksTable();
+        TextField searchRecords = new TextField();
+        searchRecords.setPromptText("Search borrowed records (title / username)...");
+        searchRecords.textProperty().addListener((a, b, c) -> {
+            String q = c == null ? "" : c.toLowerCase().trim();
+            if (q.isBlank()) records.setItems(dataStore.getAllBorrowedBooks());
+            else {
+                records.setItems(FXCollections.observableArrayList(dataStore.getAllBorrowedBooks().stream().filter(book ->
+                        safe(book.getTitle()).toLowerCase().contains(q) || safe(book.getBorrowedBy()).toLowerCase().contains(q)
+                ).collect(Collectors.toList())));
+            }
+        });
 
-        BorderPane layout = new BorderPane();
-        layout.setTop(title);
-        BorderPane.setMargin(title, new Insets(24, 24, 12, 24));
-        layout.setCenter(body);
-        return layout;
+        VBox p1 = card("Pending Submissions", pendingTable, approvalActions);
+        VBox p2 = card("Manage All Users", usersTable, userActions);
+        VBox p3 = card("Borrowed Books Record", searchRecords, records);
+
+        VBox body = new VBox(12, p1, p2, p3);
+        body.setPadding(new Insets(0, 20, 20, 20));
+
+        ScrollPane scroll = new ScrollPane(body);
+        scroll.setFitToWidth(true);
+
+        BorderPane pane = new BorderPane(scroll);
+        pane.setTop(title);
+        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        return pane;
     }
 
     private TableView<Book> buildPendingTable() {
         TableView<Book> table = new TableView<>();
         table.setItems(dataStore.getPendingBooks());
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+
         table.getColumns().addAll(
-                buildColumn("Title", Book::getTitle, 180),
-                buildColumn("Author Username", Book::getAuthorUsername, 140),
-                buildColumn("Author Name", Book::getAuthorFullName, 160),
-                buildColumn("Genre", Book::getGenre, 120),
-                buildColumn("Submitted", book -> formatDate(book.getSubmittedDate()), 130),
-                buildColumn("Status", book -> book.getStatus().getDisplayName(), 140)
+                col("Title", Book::getTitle, 180),
+                col("Author", Book::getAuthorFullName, 150),
+                col("Genre", Book::getGenre, 110),
+                col("Submitted", b -> formatDate(b.getSubmittedDate()), 110),
+                col("Status", b -> b.getStatus().getDisplayName(), 120)
         );
-        table.setPlaceholder(new Label("No pending submissions."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         return table;
     }
 
     private VBox buildApprovalActions(TableView<Book> table) {
-        Label message = new Label();
-        message.getStyleClass().add("form-message");
+        TextField search = new TextField();
+        search.setPromptText("Search by title / author / genre");
+        ComboBox<String> genre = new ComboBox<>();
+        genre.getItems().add("All");
+        genre.getItems().addAll(dataStore.getGenreOptions());
+        genre.getSelectionModel().selectFirst();
 
-        Button preview = new Button("Preview File");
-        preview.getStyleClass().add("secondary-button");
-        preview.setOnAction(event -> {
-            Book selected = table.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                message.setText("Please select a submission first.");
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            showQuickPreviewDialog(selected);
-        });
+        TextArea rejectionReason = new TextArea();
+        rejectionReason.setPromptText("Rejection reason (required for better feedback)");
+        rejectionReason.setPrefRowCount(2);
 
-        Button openFile = new Button("Open File");
-        openFile.getStyleClass().add("secondary-button");
-        openFile.setOnAction(event -> {
-            Book selected = table.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                message.setText("Please select a submission first.");
-                message.getStyleClass().setAll("form-message", "error-text");
-                return;
-            }
-            openBookFile(selected.getFilePath());
-        });
+        Label msg = new Label();
 
-        Button approve = new Button("Approve");
-        Button reject = new Button("Reject");
+        Runnable apply = () -> table.setItems(FXCollections.observableArrayList(
+                dataStore.searchPendingBooks(search.getText(), genre.getValue(), BookStatus.PENDING_APPROVAL)
+        ));
+        search.textProperty().addListener((a, b, c) -> apply.run());
+        genre.valueProperty().addListener((a, b, c) -> apply.run());
+
+        Button approve = new Button("Approve Selected");
         approve.getStyleClass().add("primary-button");
-        reject.getStyleClass().add("danger-button");
-
-        approve.setOnAction(event -> handleApproval(table, true, message));
-        reject.setOnAction(event -> handleApproval(table, false, message));
-
-        HBox buttons = new HBox(12, preview, openFile, approve, reject);
-        return new VBox(8, buttons, message);
-    }
-
-    private void handleApproval(TableView<Book> table, boolean approved, Label message) {
-        // Retrieve the currently selected book from the pending submissions table
-        Book selected = table.getSelectionModel().getSelectedItem();
-        if (selected == null) {
-            message.setText("Please select a submission first.");
-            message.getStyleClass().setAll("form-message", "error-text");
-            return;
-        }
-        
-        // Display a confirmation alert to prevent accidental approval/rejection
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Confirm Action");
-        alert.setHeaderText(approved ? "Approve this submission?" : "Reject this submission?");
-        alert.setContentText(selected.getTitle());
-        alert.showAndWait().ifPresent(result -> {
-            if (result == ButtonType.OK) {
-                // Call the appropriate data store method based on the approval decision
-                // Approved books transition to APPROVED_AVAILABLE status and appear in the student catalog
-                // Rejected books transition to REJECTED status and are not visible to students
-                DataStore.ActionResult actionResult = approved
-                        ? dataStore.approveBook(selected.getId())
-                        : dataStore.rejectBook(selected.getId());
-                        
-                if (!actionResult.success()) {
-                    message.setText(actionResult.message());
-                    message.getStyleClass().setAll("form-message", "error-text");
-                    return;
-                }
-                
-                // Display success message indicating the action was completed
-                message.setText(approved ? "Book approved." : "Book rejected.");
-                message.getStyleClass().setAll("form-message", "success-text");
-            }
+        approve.setOnAction(e -> {
+            List<Book> selected = table.getSelectionModel().getSelectedItems();
+            if (selected.isEmpty()) { setMessage(msg, "Select at least one submission.", false); return; }
+            DataStore.ActionResult r = dataStore.bulkReviewBooks(selected.stream().map(Book::getId).collect(Collectors.toList()), true, null);
+            setMessage(msg, r.message(), r.success());
+            root.setCenter(buildLibrarianDashboard());
         });
+
+        Button reject = new Button("Reject Selected");
+        reject.getStyleClass().add("danger-button");
+        reject.setOnAction(e -> {
+            List<Book> selected = table.getSelectionModel().getSelectedItems();
+            if (selected.isEmpty()) { setMessage(msg, "Select at least one submission.", false); return; }
+            if (rejectionReason.getText().trim().isEmpty()) { setMessage(msg, "Please provide rejection reason.", false); return; }
+            DataStore.ActionResult r = dataStore.bulkReviewBooks(selected.stream().map(Book::getId).collect(Collectors.toList()), false, rejectionReason.getText().trim());
+            setMessage(msg, r.message(), r.success());
+            root.setCenter(buildLibrarianDashboard());
+        });
+
+        HBox top = new HBox(8, search, genre);
+        HBox.setHgrow(search, Priority.ALWAYS);
+        return new VBox(8, top, rejectionReason, new HBox(8, approve, reject), msg);
     }
 
     private TableView<User> buildUsersTable() {
         TableView<User> table = new TableView<>();
         table.setItems(dataStore.getAllUsers());
         table.getColumns().addAll(
-                buildUserColumn("Username", User::getUsername, 160),
-                buildUserColumn("Full Name", User::getFullName, 180),
-                buildUserColumn("Role", user -> user.getRole().getDisplayName(), 120),
-                buildUserColumn("Bio", user -> formatOptional(user.getBio()), 200),
-                buildUserColumn("Employee ID", user -> formatOptional(user.getEmployeeId()), 140)
+                userCol("Username", User::getUsername, 120),
+                userCol("Full Name", User::getFullName, 160),
+                userCol("Role", u -> u.getRole().getDisplayName(), 100),
+                userCol("Active", u -> u.isActive() ? "Yes" : "No", 80),
+                userCol("Bio", u -> safe(u.getBio()), 150),
+                userCol("Employee ID", u -> safe(u.getEmployeeId()), 110)
         );
-        table.setPlaceholder(new Label("No users found."));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         return table;
     }
 
-    private <T> TableColumn<User, T> buildUserColumn(String title, javafx.util.Callback<User, T> mapper, double width) {
-        TableColumn<User, T> column = new TableColumn<>(title);
-        column.setCellValueFactory(cellData -> new javafx.beans.property.SimpleObjectProperty<>(mapper.call(cellData.getValue())));
-        column.setPrefWidth(width);
-        return column;
+    private VBox buildUserActions(TableView<User> table) {
+        Label msg = new Label();
+
+        Button add = new Button("Add New User");
+        add.getStyleClass().add("primary-button");
+        add.setOnAction(e -> showAddUserDialog(msg));
+
+        Button edit = new Button("Edit User");
+        edit.setOnAction(e -> {
+            User user = table.getSelectionModel().getSelectedItem();
+            if (user == null) { setMessage(msg, "Select a user first.", false); return; }
+            showEditUserDialog(user, msg);
+        });
+
+        Button toggle = new Button("Deactivate / Activate");
+        toggle.getStyleClass().add("secondary-button");
+        toggle.setOnAction(e -> {
+            User user = table.getSelectionModel().getSelectedItem();
+            if (user == null) { setMessage(msg, "Select a user first.", false); return; }
+            if (user.getUsername().equals(currentUser.getUsername())) { setMessage(msg, "Cannot change your own status.", false); return; }
+            DataStore.ActionResult r = dataStore.toggleUserStatus(user.getUsername());
+            setMessage(msg, r.message(), r.success());
+            table.refresh();
+        });
+
+        return new VBox(8, new HBox(8, add, edit, toggle), msg);
     }
 
-    private String formatOptional(String value) {
-        return value == null || value.isBlank() ? "-" : value;
-    }
+    private void showAddUserDialog(Label msg) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Add New User");
+        TextField username = new TextField();
+        TextField fullName = new TextField();
+        PasswordField password = new PasswordField();
+        ComboBox<Role> role = new ComboBox<>();
+        role.getItems().addAll(Role.values());
+        role.getSelectionModel().selectFirst();
 
-    private <T> TableColumn<Book, T> buildColumn(String title, javafx.util.Callback<Book, T> mapper, double width) {
-        TableColumn<Book, T> column = new TableColumn<>(title);
-        column.setCellValueFactory(cellData -> new javafx.beans.property.SimpleObjectProperty<>(mapper.call(cellData.getValue())));
-        column.setPrefWidth(width);
-        return column;
-    }
+        GridPane g = formGrid();
+        g.addRow(0, formLabel("Username"), username);
+        g.addRow(1, formLabel("Full Name"), fullName);
+        g.addRow(2, formLabel("Password"), password);
+        g.addRow(3, formLabel("Role"), role);
 
-    private String formatDate(LocalDate date) {
-        return date == null ? "-" : date.toString();
-    }
-
-    private String formatDateTime(LocalDateTime dateTime) {
-        if (dateTime == null) {
-            return "-";
+        d.getDialogPane().setContent(g);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            DataStore.RegistrationResult r = dataStore.registerUser(username.getText().trim(), fullName.getText().trim(), password.getText(), role.getValue(), "", "");
+            setMessage(msg, r.message(), r.success());
+            root.setCenter(buildLibrarianDashboard());
         }
-        return dateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
-    private HBox buildStatsRow(VBox... cards) {
-        HBox row = new HBox(12, cards);
-        row.getStyleClass().add("stats-row");
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
-    }
+    private void showEditUserDialog(User user, Label msg) {
+        Dialog<ButtonType> d = new Dialog<>();
+        d.setTitle("Edit User: " + user.getUsername());
+        TextField fullName = new TextField(user.getFullName());
+        TextField bio = new TextField(safe(user.getBio()));
+        TextField employee = new TextField(safe(user.getEmployeeId()));
 
-    private VBox buildStatCard(String labelText, String valueText, String accentClass) {
-        Label value = new Label(valueText);
-        value.getStyleClass().add("stat-value");
+        GridPane g = formGrid();
+        g.addRow(0, formLabel("Full Name"), fullName);
+        g.addRow(1, formLabel("Bio"), bio);
+        g.addRow(2, formLabel("Employee ID"), employee);
 
-        Label label = new Label(labelText);
-        label.getStyleClass().add("stat-label");
-
-        VBox card = new VBox(6, value, label);
-        card.getStyleClass().add("stat-card");
-        if (accentClass != null && !accentClass.isBlank()) {
-            card.getStyleClass().add(accentClass);
+        d.getDialogPane().setContent(g);
+        d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            DataStore.ActionResult r = dataStore.updateUserProfile(user, fullName.getText().trim(), "", bio.getText().trim(), employee.getText().trim());
+            setMessage(msg, r.message(), r.success());
+            root.setCenter(buildLibrarianDashboard());
         }
-        card.setPadding(new Insets(14, 16, 14, 16));
-        return card;
+    }
+
+    private TableView<Book> buildAllBorrowedBooksTable() {
+        TableView<Book> table = new TableView<>();
+        table.setItems(dataStore.getAllBorrowedBooks());
+        table.getColumns().addAll(
+                col("Book Title", Book::getTitle, 180),
+                col("Borrower Username", Book::getBorrowedBy, 160),
+                col("Borrow Date", b -> formatDate(b.getBorrowedDate()), 120),
+                col("Due Date", b -> formatDate(b.getDueDate()), 120),
+                col("Status", b -> b.getStatus().getDisplayName(), 120)
+        );
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        return table;
+    }
+
+    private BorderPane buildProfileScreen() {
+        Label title = new Label("Manage Profile");
+        title.getStyleClass().add("section-title");
+
+        Label username = new Label(currentUser.getUsername());
+        TextField fullName = new TextField(currentUser.getFullName());
+        PasswordField currentPass = new PasswordField();
+        currentPass.setPromptText("Re-enter current password to save any changes");
+        PasswordField newPass = new PasswordField();
+        newPass.setPromptText("Leave empty to keep current password");
+
+        Label strength = new Label();
+        newPass.textProperty().addListener((a, b, c) -> strength.setText(passwordStrength(c)));
+
+        TextField bio = new TextField(currentUser.getRole() == Role.AUTHOR ? safe(currentUser.getBio()) : "");
+        TextField employee = new TextField(currentUser.getRole() == Role.LIBRARIAN ? safe(currentUser.getEmployeeId()) : "");
+
+        TextField avatarPath = new TextField(safe(currentUser.getAvatarPath()));
+        avatarPath.setEditable(false);
+        Button uploadAvatar = new Button("Upload Avatar (Optional)");
+        uploadAvatar.getStyleClass().add("secondary-button");
+        uploadAvatar.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Avatar Image");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) {
+                long maxBytes = 2L * 1024 * 1024;
+                String lower = file.getName().toLowerCase();
+                boolean okType = lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg");
+                if (!okType) {
+                    new Alert(Alert.AlertType.ERROR, "Avatar format must be PNG/JPG/JPEG.").showAndWait();
+                    return;
+                }
+                if (file.length() > maxBytes) {
+                    new Alert(Alert.AlertType.ERROR, "Avatar size must be <= 2MB.").showAndWait();
+                    return;
+                }
+                avatarPath.setText(file.getAbsolutePath());
+            }
+        });
+        HBox avatarRow = new HBox(8, avatarPath, uploadAvatar);
+        HBox.setHgrow(avatarPath, Priority.ALWAYS);
+
+        GridPane g = formGrid();
+        int r = 0;
+        g.addRow(r++, formLabel("Username"), username);
+        g.addRow(r++, formLabel("Full Name"), fullName);
+        g.addRow(r++, formLabel("Current Password"), currentPass);
+        g.addRow(r++, formLabel("New Password"), newPass);
+        g.addRow(r++, formLabel("Password Strength"), strength);
+        if (currentUser.getRole() == Role.AUTHOR) {
+            g.addRow(r++, formLabel("Bio"), bio);
+            g.addRow(r++, formLabel("Profile Picture"), avatarRow);
+        }
+        if (currentUser.getRole() == Role.LIBRARIAN) g.addRow(r++, formLabel("Employee ID"), employee);
+
+        Label msg = new Label();
+        Button save = new Button("Save Profile");
+        save.getStyleClass().add("primary-button");
+        save.setOnAction(e -> {
+            User verified = dataStore.authenticate(currentUser.getUsername(), currentPass.getText(), currentUser.getRole());
+            if (verified == null) {
+                setMessage(msg, "Current password is incorrect.", false);
+                return;
+            }
+            boolean passwordChanged = !newPass.getText().isBlank();
+            DataStore.ActionResult result = dataStore.updateUserProfile(currentUser,
+                    fullName.getText().trim(),
+                    newPass.getText(),
+                    bio.getText().trim(),
+                    employee.getText().trim());
+            if (result.success() && currentUser.getRole() == Role.AUTHOR) {
+                currentUser.setAvatarPath(avatarPath.getText().trim());
+                dataStore.saveData();
+            }
+            setMessage(msg, result.message(), result.success());
+
+            if (result.success() && passwordChanged) {
+                Alert a = new Alert(Alert.AlertType.INFORMATION, "Password changed. You will be logged out now.");
+                a.showAndWait();
+                currentUser = null;
+                root.setCenter(buildLanding());
+            }
+        });
+
+        VBox body = new VBox(14, g, save, msg);
+        body.setPadding(new Insets(20));
+        body.getStyleClass().add("card");
+        body.setMaxWidth(700);
+
+        BorderPane pane = new BorderPane(body);
+        pane.setTop(title);
+        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        BorderPane.setMargin(body, new Insets(0, 20, 20, 20));
+        return pane;
+    }
+
+    private BorderPane buildNotificationScreen() {
+        Label title = new Label("Notification Board");
+        title.getStyleClass().add("section-title");
+
+        ObservableList<Notification> source = FXCollections.observableArrayList(dataStore.getNotificationsForUser(currentUser.getUsername(), true));
+        FilteredList<Notification> filtered = new FilteredList<>(source, n -> true);
+
+        Label unread = new Label("Unread: " + dataStore.getUnreadNotificationCount(currentUser.getUsername()));
+        unread.getStyleClass().add("card-title");
+
+        TextField search = new TextField();
+        search.setPromptText("Search notifications...");
+        ComboBox<String> category = new ComboBox<>();
+        category.getItems().addAll("All", "Due Reminder", "Book Deletion", "Book Approval", "Book Rejection", "Submission", "Account", "General", "Borrowing");
+        category.getSelectionModel().selectFirst();
+        ComboBox<String> showMode = new ComboBox<>();
+        showMode.getItems().addAll("Active", "Archived", "All");
+        showMode.getSelectionModel().selectFirst();
+
+        Runnable apply = () -> filtered.setPredicate(n -> {
+            String q = search.getText() == null ? "" : search.getText().toLowerCase().trim();
+            if (!q.isBlank() && !safe(n.getMessage()).toLowerCase().contains(q)) return false;
+            if (!"All".equals(category.getValue()) && !category.getValue().equalsIgnoreCase(n.getCategory())) return false;
+            if ("Active".equals(showMode.getValue()) && n.isArchived()) return false;
+            if ("Archived".equals(showMode.getValue()) && !n.isArchived()) return false;
+            return true;
+        });
+        search.textProperty().addListener((a, b, c) -> apply.run());
+        category.valueProperty().addListener((a, b, c) -> apply.run());
+        showMode.valueProperty().addListener((a, b, c) -> apply.run());
+
+        ListView<Notification> list = new ListView<>(filtered);
+        list.setCellFactory(v -> new ListCell<>() {
+            @Override
+            protected void updateItem(Notification n, boolean empty) {
+                super.updateItem(n, empty);
+                if (empty || n == null) { setText(null); setGraphic(null); return; }
+                Label m = new Label((n.isRead() ? "" : "[UNREAD] ") + n.getMessage());
+                m.setWrapText(true);
+                Label meta = new Label(n.getCategory() + " | " + n.getUrgency() + " | " + formatDateTime(n.getTimestamp()));
+                meta.getStyleClass().add("muted-text");
+                setGraphic(new VBox(4, m, meta));
+            }
+        });
+
+        Label msg = new Label();
+        Button markRead = new Button("Mark as Read");
+        markRead.setOnAction(e -> {
+            Notification n = list.getSelectionModel().getSelectedItem();
+            if (n == null) { setMessage(msg, "Select a notification.", false); return; }
+            dataStore.markNotificationRead(n.getId(), true);
+            refreshNotificationData(source, unread);
+        });
+
+        Button archive = new Button("Archive / Unarchive");
+        archive.setOnAction(e -> {
+            Notification n = list.getSelectionModel().getSelectedItem();
+            if (n == null) { setMessage(msg, "Select a notification.", false); return; }
+            dataStore.archiveNotification(n.getId(), !n.isArchived());
+            refreshNotificationData(source, unread);
+        });
+
+        Button delete = new Button("Delete");
+        delete.getStyleClass().add("danger-button");
+        delete.setOnAction(e -> {
+            Notification n = list.getSelectionModel().getSelectedItem();
+            if (n == null) { setMessage(msg, "Select a notification.", false); return; }
+            dataStore.deleteNotification(n.getId());
+            refreshNotificationData(source, unread);
+        });
+
+        HBox filterRow = new HBox(8, search, category, showMode);
+        HBox.setHgrow(search, Priority.ALWAYS);
+        HBox actionRow = new HBox(8, markRead, archive, delete);
+
+        VBox body = new VBox(10, unread, filterRow, list, actionRow, msg);
+        body.setPadding(new Insets(20));
+        body.getStyleClass().add("card");
+
+        BorderPane pane = new BorderPane(body);
+        pane.setTop(title);
+        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        BorderPane.setMargin(body, new Insets(0, 20, 20, 20));
+        return pane;
+    }
+
+    private void refreshNotificationData(ObservableList<Notification> source, Label unread) {
+        source.setAll(dataStore.getNotificationsForUser(currentUser.getUsername(), true));
+        unread.setText("Unread: " + dataStore.getUnreadNotificationCount(currentUser.getUsername()));
+    }
+
+    private void simulateCrash() {
+        saveSession("CrashTest", null);
+        Alert a = new Alert(Alert.AlertType.WARNING, "Crash simulated. App will close now.");
+        a.showAndWait();
+        stage.close();
+    }
+
+    private void saveSession(String screen, String selectedBookId) {
+        if (currentUser != null) dataStore.saveSessionState(currentUser.getUsername(), screen, selectedBookId);
+    }
+
+    private void restorePreviousSessionIfPossible() {
+        DataStore.SessionState state = dataStore.getSessionState();
+        if (state == null || state.getUsername() == null || state.getUsername().isBlank()) return;
+
+        Optional<User> target = dataStore.getAllUsers().stream()
+                .filter(u -> u.getUsername().equals(state.getUsername()))
+                .findFirst();
+        if (target.isEmpty()) return;
+
+        currentUser = target.get();
+        String screen = safe(state.getScreen());
+
+        if (screen.equals("Dashboard")) showDashboard(currentUser, "Dashboard");
+        else if (screen.equals("Profile")) root.setCenter(buildProfileScreen());
+        else if (screen.equals("Notifications")) root.setCenter(buildNotificationScreen());
+        else if (screen.equals("Reader") || screen.equals("CrashTest")) showDashboard(currentUser, "Dashboard");
+        else showDashboard(currentUser, "Dashboard");
+
+        Alert restored = new Alert(Alert.AlertType.INFORMATION,
+                "Session restored successfully for " + currentUser.getUsername() +
+                        " (last state: " + screen + ")");
+        restored.showAndWait();
+    }
+
+    private GridPane formGrid() {
+        GridPane g = new GridPane();
+        g.setHgap(12);
+        g.setVgap(10);
+        ColumnConstraints left = new ColumnConstraints();
+        left.setMinWidth(150);
+        ColumnConstraints right = new ColumnConstraints();
+        right.setHgrow(Priority.ALWAYS);
+        g.getColumnConstraints().addAll(left, right);
+        return g;
+    }
+
+    private Label formLabel(String text) {
+        Label l = new Label(text);
+        l.setWrapText(true);
+        return l;
+    }
+
+    private VBox statCard(String label, String value) {
+        Label v = new Label(value); v.getStyleClass().add("stat-value");
+        Label l = new Label(label); l.getStyleClass().add("stat-label");
+        VBox box = new VBox(4, v, l);
+        box.setPadding(new Insets(10));
+        box.getStyleClass().add("stat-card");
+        return box;
+    }
+
+    private VBox card(String title, javafx.scene.Node... children) {
+        Label t = new Label(title);
+        t.getStyleClass().add("card-title");
+        VBox box = new VBox(10);
+        box.getChildren().add(t);
+        box.getChildren().addAll(children);
+        box.setPadding(new Insets(14));
+        box.getStyleClass().add("card");
+        return box;
+    }
+
+    private <T> TableColumn<Book, T> col(String title, javafx.util.Callback<Book, T> mapper, double width) {
+        TableColumn<Book, T> c = new TableColumn<>(title);
+        c.setCellValueFactory(cd -> new SimpleObjectProperty<>(mapper.call(cd.getValue())));
+        c.setPrefWidth(width);
+        return c;
+    }
+
+    private TableColumn<User, String> userCol(String title, javafx.util.Callback<User, String> mapper, double width) {
+        TableColumn<User, String> c = new TableColumn<>(title);
+        c.setCellValueFactory(cd -> new SimpleStringProperty(mapper.call(cd.getValue())));
+        c.setPrefWidth(width);
+        return c;
+    }
+
+    private void setMessage(Label label, String text, boolean success) {
+        label.setText(text);
+        label.getStyleClass().setAll("form-message", success ? "success-text" : "error-text");
+    }
+
+    private String formatDate(LocalDate d) { return d == null ? "-" : d.toString(); }
+    private String formatDateTime(LocalDateTime d) { return d == null ? "-" : d.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")); }
+    private String safe(String s) { return s == null ? "" : s; }
+
+    private String passwordStrength(String password) {
+        if (password == null || password.isBlank()) return "";
+        int score = 0;
+        if (password.length() >= 8) score++;
+        if (password.matches(".*[A-Z].*")) score++;
+        if (password.matches(".*[a-z].*")) score++;
+        if (password.matches(".*\\d.*")) score++;
+        if (password.matches(".*[^a-zA-Z0-9].*")) score++;
+        if (score <= 2) return "Weak";
+        if (score <= 4) return "Medium";
+        return "Strong";
     }
 }

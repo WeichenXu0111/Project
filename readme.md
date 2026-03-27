@@ -1,316 +1,453 @@
-# Library Management System for HKUST (E-Library System)
+# HKUST E-Library System
 
-## Project Overview
-
-In this project, you need to develop a Library Management System for HKUST (E-Library System). The system is useful for students/staff, authors, and librarians.
-
-From this system:
-
-- Students/Staff can log in/register into the system, see the available books, borrow and return the book, read the book, manage their own profile, and so on...
-- Authors can log in/register into the system, view/modify/delete a book published by them, upload a new book, view book stats, manage their own profile, and so on...
-- Librarians can log in/register into the system, manage all books, manage all users, manage their own profile, and so on...
+An online library management system built with JavaFX that provides a comprehensive platform for students/staff, authors, and librarians to interact with a digital library ecosystem.
 
 ---
 
-## Project Details
+## Overview
 
-- Group of 3 students (max)
-- Each student will be responsible for 1 main task. And each main task is divided into sub-tasks.
-- Three phases of incremental development
-    - Each phase will introduce a set of new features
-    - A complete system must be built at the end of each phase
-    - Must complete both requirements, modeling and implementation
-    - Must be incremental, not a new application
-- Crazy customer mode
-    - One week before the deadline of each phase, the crazy customer will ask for a new (reasonable) feature to be built
-    - Evaluation is the same as regular features
+The HKUST E-Library System is a desktop application that streamlines book management and distribution across an academic institution. It supports three distinct user roles with tailored functionalities:
+
+- **Students/Staff**: Browse and borrow books from the approved catalog
+- **Authors**: Submit and manage their published works
+- **Librarians**: Oversee the entire book approval process and user management
 
 ---
 
-## Important Note
+## Key Features
 
-- UI design/style should be consistent across all three main tasks (Task 1, 2, 3)
-- All the functionalities should be in working form for each subtask.
-- Test the edge cases based on your knowledge from the real world
-- For all the tasks, you need to handle exceptional handling (edge cases) by yourself (Means: You need to think about how to implement logically perfect functionality)
+### 🎓 Student/Staff Portal
+
+#### Authentication & Profile
+- User registration with username, full name, password, and role selection
+- Secure login with credential validation
+- Profile management capabilities
+<img width="1650" height="1002" alt="image" src="https://github.com/user-attachments/assets/faa5dcbb-99e8-4322-a152-d01011f1b1d3" />
+
+#### Book Browsing & Discovery
+- **Available Books Catalog**: Browse all approved books with detailed information
+- **Book Details Display**: 
+  - Title, Author name, Genre, Publication date
+  - Availability status
+  - Book abstract/summary
+- **Advanced Search & Filtering**:
+  - Search by title or author name
+  - Filter by genre
+  - Filter by availability status (Available/Borrowed)
+  - Filter by publication date
+  - Real-time filtering with instant results
+
+#### Book Borrowing & Management
+- **Borrow Books**: Select and borrow available books with confirmation
+- **14-Day Borrow Period**: Automatic due date calculation (14 days from borrow date)
+- **Borrowed Books Management**:
+  - View all currently borrowed books with due dates
+  - Return borrowed books with confirmation dialog
+  - Track borrow and due dates
+<img width="1655" height="1008" alt="image" src="https://github.com/user-attachments/assets/60042c04-7167-44e5-bd46-bcb629a4c24b" />
+
+
+#### Book Exploration
+- **Quick Preview**: View first 3 pages of PDF books or text preview of other formats
+- **Book Summary Dialog**: Read full book descriptions and summaries
+- **Direct File Access**: Open complete book files for reading
+
+#### Personalized Recommendations
+- **Recommendation System**: AI-based book recommendations tailored to user
+- **Refresh Recommendations**: Get new recommendations on demand
+- **Interactive Selection**: Click recommendations to view details in catalog
+
+#### Dashboard Statistics
+- **Stats Dashboard**: View key metrics
+  - Total available books
+  - Personal borrowed count
+  - Access level information
 
 ---
 
-## Main Tasks in all Phases
+### ✍️ Author Portal
 
-### Task 1
+#### Authentication
+- Author registration with username, full name, password
+- Bio/profile information (optional)
+- Secure login and session management
 
-- Handle the student/staff login and registration
-- Available book screen (to borrow a book)
-- Borrowed book screen
-- Read the book as a PDF (add bookmarks and watermarks)
-- Return books
+#### Book Publishing
+- **Publish New Book Form**:
+  - Book title input
+  - Author name (auto-filled from profile)
+  - Multiple genre selection (multi-select)
+  - Book summary/description (shown to readers)
+  - Book file attachment (PDF support)
+<img width="1904" height="969" alt="image" src="https://github.com/user-attachments/assets/349fc641-8e82-4a58-ba11-b9d8db5ed9a4" />
+
+<img width="1904" height="964" alt="image" src="https://github.com/user-attachments/assets/769e72fd-1366-45a6-b335-4c5af7fd4739" />
+
+#### Auto-Save Draft Feature
+- **Automatic Draft Saving**: 2-second auto-save delay
+- **Draft Persistence**: Restore previously saved draft on login
+- **Auto-save Status**: Display last save timestamp
+- **Draft Management**: Clear draft after successful submission
+
+#### Submission Management
+- **Preview Before Submission**: Review all book details before publishing
+- **Book Submission**: Submit books for librarian approval
+- **Submissions Tracking Table**:
+  - View all submitted books with metadata
+  - Track submission date
+  - Monitor approval status (Pending/Approved/Rejected)
+
+#### Dashboard Analytics
+- **Publishing Statistics**:
+  - Total submissions count
+  - Approved books count
+  - Rejected submissions count
+- **Publication Status**: See each book's approval status
+
+---
+
+### 📚 Librarian Dashboard
+
+#### Authentication
+- Librarian registration with username, full name, password
+- Employee ID (optional)
+- Administrative access control
+<img width="1919" height="967" alt="image" src="https://github.com/user-attachments/assets/fb088fad-2e4f-41fa-9184-dde27cd6c269" />
+
+
+#### Book Approval Workflow
+- **Pending Submissions Queue**:
+  - View all books awaiting approval
+  - Book details: Title, Author username, Author name, Genre, Submission date, Status
+- **Approval Actions**:
+  - **Preview File**: Quick 3-page PDF preview of submissions
+  - **Open File**: Direct file access for detailed review
+  - **Approve**: Accept and publish books to catalog
+  - **Reject**: Send rejection with feedback
+<img width="1919" height="1002" alt="image" src="https://github.com/user-attachments/assets/a24240e5-2391-435b-a138-5b83ee5b3d20" />
+<img width="1919" height="1008" alt="image" src="https://github.com/user-attachments/assets/5301139e-27d2-4edc-9083-f04c98161c7c" />
+
+
+#### User Management
+- **User Directory**: View all registered users
+- **User Information Display**:
+  - Username and full name
+  - User role (Student/Staff/Author/Librarian)
+  - Bio information (if provided)
+  - Employee ID (if provided)
+- **User Statistics**: Monitor total registered users
+
+#### Catalog Management
+- **Library Statistics Dashboard**:
+  - Total pending approvals
+  - Total approved books in catalog
+  - Total registered users count
+
+#### Approval Confirmation
+- **Confirmation Dialogs**: Verify approval/rejection actions
+- **User Feedback**: Clear messaging on action success/failure
+
+---
+
+## Technical Stack
+
+### Core Technologies
+- **Language**: Java 21
+- **UI Framework**: JavaFX 21+
+- **Build Tool**: Maven 3.9+
+- **PDF Processing**: Apache PDFBox
+
+### Data Persistence
+- **Storage**: Local serialization (Java object serialization)
+- **Data Location**: `data/lms-data.dat`
+- **Security**: Encrypted password storage with validation
+
+### Architecture
+- **MVC Pattern**: Clear separation of concerns
+- **Model Classes**: `User`, `Book`, `Role`, `BookStatus`, `AuthorDraft`
+- **Data Store**: Centralized `DataStore` for all data operations
+- **UI Components**: Reusable form builders, table views, and dialogs
+
+---
+
+## Security Features
+
+- **Password Security**: 
+  - Encrypted password storage
+  - Password validation on registration
+- **User Authentication**: 
+  - Credential validation on login
+  - Role-based access control
+- **Data Protection**: 
+  - Secure local storage of all user data
+  - Credentials protected with encryption
+
+---
+
+## System Requirements
+
+- **Java**: 21 or higher
+- **Maven**: 3.9 or higher
+- **Operating System**: Windows, macOS, or Linux (with JavaFX support)
+- **Display**: Minimum 1100x700 resolution recommended
+
+---
+
+## Installation & Setup
+
+### Prerequisites
+Ensure you have Java 21 and Maven 3.9+ installed:
+```bash
+java -version
+mvn -version
+```
+
+### Installation Steps
+
+1. **Clone/Extract the Project**
+   ```bash
+   cd C:\Users\86158\Desktop\Project New\Project-master
+   ```
+
+2. **Build the Project**
+   ```bash
+   mvn clean install
+   ```
+
+3. **Run the Application**
+   ```bash
+   mvn -q javafx:run
+   ```
+
+---
+
+## Running Tests
+
+Execute the test suite to validate functionality:
+```bash
+mvn -q test
+```
+
+---
+
+## Project Structure
+
+```
+Project-master/
+├── src/
+│   ├── main/
+│   │   ├── java/org/example/
+│   │   │   ├── App.java                    # Main UI application
+│   │   │   ├── Main.java                   # Entry point
+│   │   │   ├── data/
+│   │   │   │   └── DataStore.java         # Data persistence layer
+│   │   │   ├── model/
+│   │   │   │   ├── User.java              # User entity
+│   │   │   │   ├── Book.java              # Book entity
+│   │   │   │   ├── AuthorDraft.java       # Author draft entity
+│   │   │   │   ├── Role.java              # User role enum
+│   │   │   │   └── BookStatus.java        # Book status enum
+│   │   │   └── security/
+│   │   │       └── PasswordUtil.java      # Password encryption/validation
+│   │   └── resources/
+│   │       ├── styles.css                 # UI styling
+│   │       └── logo.png                   # Application logo
+│   └── test/
+│       └── java/org/example/
+│           └── security/
+│               └── PasswordUtilTest.java  # Password utility tests
+├── data/
+│   └── lms-data.dat                       # Persistent data storage
+├── pom.xml                                # Maven configuration
+└── README.md                              # This file
+```
+
+---
+
+## Usage Guide
+
+### For Students/Staff
+
+1. **Register Account**: Click "Student / Staff" → "Register" tab → Fill details
+2. **Login**: Click "Login" tab → Enter credentials
+3. **Browse Books**: View available books in the catalog
+4. **Borrow Books**: Select a book → Click "Borrow Selected Book"
+5. **Read Books**: Click "Quick Preview" for preview or open full file
+6. **Return Books**: Go to "My Borrowed Books" → Select book → Click "Return Selected Book"
+7. **Get Recommendations**: View personalized recommendations or click "Refresh Recommendations"
+
+### For Authors
+
+1. **Register Account**: Click "Author" → "Register" tab → Fill details
+2. **Login**: Click "Login" tab → Enter credentials
+3. **Publish Book**: 
+   - Fill book title, select genres
+   - Write summary
+   - Attach PDF file
+   - Click "Submit for Approval"
+4. **Track Submissions**: View submission status in "My Submissions" table
+5. **Auto-saved Drafts**: Unfinished submissions are automatically saved
+
+### For Librarians
+
+1. **Register Account**: Click "Librarian" → "Register" tab → Fill details
+2. **Login**: Click "Login" tab → Enter credentials
+3. **Review Submissions**: 
+   - View pending books in "Pending Book Approvals"
+   - Click "Preview File" to see content
+   - Click "Open File" for full review
+4. **Approve/Reject Books**: 
+   - Select submission
+   - Click "Approve" or "Reject"
+   - Confirm action in dialog
+5. **Manage Users**: View all registered users in "User Directory"
+6. **Monitor System**: Check statistics for pending approvals and catalog size
+
+---
+
+## Data Management
+
+### Persistent Storage
+- All data is automatically saved to `data/lms-data.dat`
+- Data is loaded when the application starts
+- All user credentials are encrypted and securely stored
+
+### User Data Stored
+- Registration information (username, full name, role)
+- Encrypted passwords
+- User profiles (bio, employee ID)
+- Author submission history
+- Student borrowing records
 - Reading history
-- Review/Rate books
-- Manage profile screen
-- Request for a new book
-- Notification board
 
-### Task 2
-
-- Handle the author login and registration
-- Published book screen
-- Publish new book screen
-- LLM model to generate a book summary
-- View stats screen
-- Review and feedback handling
-- Manage profile screen
-- Notification board
-
-### Task 3
-
-- Handle the librarian login and registration
-- Pending approval, book screen
-- Manage all users' screens
-- Manage own profile screen
-- Borrowed books record screen
-- Manage Published Books screen
-- Modify the book details published by any author
-- Manage new book requests and Download the requested books
-- Using a web crawler or ML tools
-- Notification board
+### Book Data Stored
+- Book metadata (title, author, genres, summary)
+- Book file path and content
+- Approval status and timestamps
+- Availability information
+- Borrowing records
 
 ---
 
-## Tentative Important Dates to Remember
+## Features in Development/Phase 2
 
-- Group formation starts from 16th February (after add/drop)
-- Group formation deadline: 22nd February (1 week)
-- Release Phase 1: 23rd February
-- Phase 1 deadline: 12th March 06:00 PM
-- Phase 1 project demo: 12th March 06:00-08:00 PM
-- Release Phase 2: 13th March
-- Phase 2 deadline: 02nd April 06:00 PM
-- Phase 2 project demo: 02nd April 06:00-08:00 PM
-- Release Phase 3: 03rd April
-- Phase 3 deadline: 07th May 06:00 PM
-- Final Project Demo: 07th May 06:00-08:00 PM
+The system is designed to be modular and extensible. Future phases may include:
 
----
-
-## Technical Requirements
-
-- You can use any programming language to build this project. There is no restriction.
-- Attention: As announced by Prof. Charles, you must obtain his approval before using any programming language for your project; Java is exempt.
-- There is no skeleton code provided to any group. You need to build your project from scratch (frontend + backend).
-- You are allowed to use AI tools, but not recommended.
+- 📖 Reading history and analytics
+- ⭐ Book reviews and ratings
+- 📧 Notification system
+- 📊 Advanced analytics and statistics
+- 🔍 AI-powered book recommendations (LLM integration)
+- 🌐 Web crawler for book discovery
+- 📱 Mobile application support
+- 🎓 Academic content management
 
 ---
 
-## Project Discussion Rules
+## Error Handling & Edge Cases
 
-- You should not discuss things between different teams related to project requirements
-- You should not share code with other teams (as there will be a plagiarism check)
-- You should not post your code on Canvas discussion or other public resources (e.g., GitHub)
-- You should not disscuss project related things in telegram group (except looking for teammates)
-- You can ask questions to repective TA assigned to your team if any confusion
+The system handles various edge cases:
 
----
-
-## CHANGELOG
-
-Updated information in 'Technical Requirements' @ 23-02-2026
-
-### Requirements for All Tasks (Task 1, 2, 3) and for All Phases (Phase 1, 2, 3)
-
-#### Non-functional Requirements
-
-- The application should have a user-friendly interface.
-- The application should have a consistent interface across all users (student, staff, author, librarian)
-- It should be responsive and functional across different devices (if you are developing a Web, Android, and iOS-based application system).
-- Ensure that data is securely stored, particularly all user’s credentials and book’s information.
-
-#### Technical Requirements
-
-- Use best coding practices, including readability and maintainability.
-- Implement appropriate data structures for managing users and books.
-
-#### Submission Guidelines
-
-- Submit your project as a ZIP file containing all source code and relevant documentation.
-- Include a README file with setup instructions and any additional requirements that are useful for TA for grading purposes.
-- Code should be well-commented to clarify functionality.
+- **Duplicate Username**: Prevents duplicate user registrations
+- **Weak Passwords**: Validates password strength requirements
+- **Unavailable Books**: Prevents borrowing of already-borrowed books
+- **File Not Found**: Graceful handling of missing book files
+- **Invalid Credentials**: Clear error messages for authentication failures
+- **Concurrent Operations**: Data consistency across simultaneous user actions
+- **PDF Rendering**: Fallback preview mechanisms if PDF rendering fails
 
 ---
 
-# Phase 1 – Main Features
+## Support & Troubleshooting
 
-## Task 1 Student/Staff Portal
+### Common Issues
 
-In this task, you need to manage the student/staff access and screens related to this user. Particularly, you need to perform 4 main subtasks.
+**Application won't start**
+- Ensure Java 21 is installed: `java -version`
+- Check Maven is installed: `mvn -version`
+- Run `mvn clean install` before launching
 
-- Student/Staff Registration
-- Student/Staff Login
-- Available book screen
-- Borrow book
+**UI appears scaled incorrectly**
+- The application requires minimum 1100x700 resolution
+- Try maximizing the window
 
-### Task 1.1 Student/Staff Registration
+**Data not persisting**
+- Ensure `data/` directory exists and is writable
+- Check file permissions on `data/lms-data.dat`
 
-- Create a user interface that allows students and staff to register for an account.
-- Users must provide the following information during registration:
-    - Username (must be unique)
-    - Full Name
-    - Password (with validation rules, e.g., minimum length)
-    - Role (Student or Staff)
-- Implement error handling for registration failures (e.g., duplicate username, weak password, etc.).
-- Ensure that data is stored securely, particularly user credentials.
-- Provide feedback for successful or failed register attempts.
+**PDF Preview not working**
+- Verify the PDF file path is correct
+- Ensure PDFBox library is properly installed via Maven
 
-### Task 1.2 Student/Staff Login
+### Getting Help
 
-- Implement a login screen where registered users can enter their credentials.
-- Users must enter the following credentials to enter the system:
-    - Username
-    - Password
-- Validate the credentials against the registered user database.
-- Provide feedback for successful or failed login attempts.
-
-### Task 1.3 Available Book Screen
-
-- Create a screen that displays a list of available books (published by authors from task 2).
-- Include the following details for each book:
-    - Title
-    - Author
-    - Publish Date (the date when book is approved by librarian)
-    - Availability Status
-    - Book Abstract/Summary
-
-### Task 1.4 Borrow Book
-
-- Using the available book screen (task 1.3), implement functionality for users to borrow a book.
-- Ensure that the system checks for availability before allowing a borrow action.
-- Update the book's status to reflect that it has been borrowed.
-- Provide confirmation to the user once a book is successfully borrowed.
+For issues or questions:
+1. Check existing error messages in the UI
+2. Review the test files in `src/test/`
+3. Consult the Project Documentation (`PHASE1_IMPLEMENTATION.md`)
 
 ---
 
-## Task 2 Author Portal
+## Development Notes
 
-In this task, you need to manage the author’s access and screens related to this user. Particularly, you need to perform 3 main subtasks.
+### Key Components
 
-- Author Registration
-- Author Login
-- Publish New Book
+- **App.java**: Main JavaFX application with 1320+ lines containing all UI logic
+- **DataStore.java**: Handles all data persistence, retrieval, and business logic
+- **Password Security**: PasswordUtil handles secure password operations
 
-### Task 2.1 Author Registration
+### UI Design Principles
 
-- Create a user interface that allows author to register for an account.
-- Users must provide the following information during registration:
-    - Username (must be unique)
-    - Full Name
-    - Password (with validation rules, e.g., minimum length)
-    - Bio (optional)
-- Implement error handling for registration failures (e.g., duplicate username, weak password, etc.).
-- Ensure that data is stored securely, particularly user credentials.
-- Provide feedback for successful or failed register attempts.
+- Consistent styling across all portals
+- Role-based dashboard customization
+- Real-time filtering and search
+- Confirmation dialogs for critical actions
+- Clear success/error messaging
+- Auto-save functionality for author drafts
 
-### Task 2.2 Author Login
+### Code Quality
 
-- Implement a login screen where registered users can enter their credentials.
-- Users must enter the following credentials to enter the system:
-    - Username
-    - Password
-- Validate the credentials against the registered user database.
-- Provide feedback for successful or failed login attempts.
-
-### Task 2.3 Publish New Book
-
-- Create a form that allows authors to publish new books.
-- Authors must provide the following information for each book:
-    - Title
-    - Author Name (pre-filled with their registered Full Name)
-    - Genre
-    - Description (Abstract/Summary)
-- Authors must upload a book file that they want to publish
-- File format can be txt, pdf, word, etc. based on your application support (pdf is recommended)
-- Upon submission, validate the book data and send this book publish request to librarian for his approval
-- Provide confirmation to the user once a book is successfully submitted
+- Well-commented codebase
+- Proper error handling throughout
+- MVC architectural pattern
+- Reusable component builders
+- Type-safe data structures
 
 ---
 
-## Task 3 Librarian Portal
+## License
 
-In this task, you need to manage the librarian’s access and screens related to this user. Particularly, you need to perform 3 main subtasks.
-
-- Librarian Registration
-- Librarian Login
-- Librarian New Books Approval Screen and Functionalities (approve/reject)
-
-### Task 3.1 Librarian Registration
-
-- Create a user interface that allows librarians to register for an account.
-- Users must provide the following information during registration:
-    - Username (must be unique)
-    - Full Name
-    - Password (with validation rules, e.g., minimum length)
-    - Employee ID (optional)
-- Implement error handling for registration failures (e.g., duplicate username, weak password, etc.).
-- Ensure that data is stored securely, particularly user credentials.
-- Provide feedback for successful or failed register attempts.
-
-### Task 3.2 Librarian Login
-
-- Implement a login screen where registered users can enter their credentials.
-- Users must enter the following credentials to enter the system:
-    - Username
-    - Password
-- Validate the credentials against the registered user database.
-- Provide feedback for successful or failed login attempts.
-
-### Task 3.3 Librarian New Books Approval Screen and Functionalities
-
-- Create a screen that displays a list of new book submissions awaiting approval.
-- For each submission, show the following details:
-    - Title
-    - Author Username
-    - Author Full Name
-    - Genre
-    - Submitted Date
-    - Status (Pending Approval)
-- Provide functionality for the librarian to approve or reject submissions, with a confirmation dialog before finalizing the action.
-- Update the status of the book upon approval or rejection and provide feedback to the librarian.
+This project is part of the COMP3111 course at HKUST.
 
 ---
 
-## Phase 1 – Nice to have Features
+## Contributors
 
-For Task 1.1, 2.1, 3.1:
+HKUST E-Library System - Phase 1 Implementation
 
-Following requirements need to be checked when user is registering into system.
+---
 
-Username: Check if the username is unique across all types of users (student, staff, author, librarian). If not unique show error message.
-Full Name: Check if Full Name is empty or not, if left blank show error message
-Password: Check if the password is strong or weak or empty. Show error messages if necessary.
-Search online what is the standard password limit and criteria used mostly and implement accordingly.
+## Changelog
 
-For Task 1.2, 2.2, 3.2:
+### Version 1.0 (Phase 1) - Current
+- ✅ Student/Staff registration and login
+- ✅ Author registration and login  
+- ✅ Librarian registration and login
+- ✅ Book browsing with advanced filtering
+- ✅ Book borrowing and returning
+- ✅ Author book submission with auto-save
+- ✅ Librarian approval/rejection workflow
+- ✅ User management dashboard
+- ✅ Book preview and summary viewing
+- ✅ Personalized recommendations
+- ✅ Comprehensive statistics dashboard
+- ✅ Secure data persistence
 
-Following requirement needs to be checked when user is login into system.
+---
 
-Username: Check if the user belongs to this user type. For example, a student should not be able to login into staff account since username is unique. Show appropriate error message.
+## Contact
 
-For Task 1.3:
+For questions or feedback regarding this project, please contact your course instructor or teaching assistant.
 
-Search and Filter Books: Allow users to find books faster as the library grows. Users can search by title, author; filter by genre, publish date, availability.
-Quick Review: Allow user to quickly review book content before user borrow the book for reading. For example, show first few pages for quick review. Or any other reasonable approach is also fine
-Reading Summary: Allow user to read the book description (summary/abstract) before user borrow the book for reading. If Summary is too long pop-up a screen for quick read the summary.
-Book Recommendations: Suggest books based on borrowing history or popular titles (for example count the times borrowed for each book by all users OR use some LLM model to recommend a book based on book content). You can also consider other logical factors for book recommendations.
-For Task 1.4:
 
-Borrow Confirmation with Details: Before finalizing the borrow, show a confirmation dialog displaying the selected book(s), borrow duration, due date, and any applicable limits or warnings.
-Book Availability: Mark books title with red or black based on their availability in the searching result and only allow users to borrow available books.
 
-For Task 2.3:
-
-Book Preview: Provide a preview functionality where authors can view a formatted summary of their book details (title, genre, description) before final submission.
-Multiple Genre Selection: Enable authors to select multiple genres for a book from a predefined list, improving categorization and future searchability.
-Auto-Save Draft: Implement an auto-save feature for the publication form, allowing authors to resume incomplete submissions later without losing data.
-
-For Task 3.3:
-
-Book Content Review: Allow librarians to preview or download the uploaded book file directly from the approval screen before deciding to approve or reject.

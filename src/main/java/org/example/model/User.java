@@ -8,12 +8,14 @@ public class User implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private final String username;
-    private final String fullName;
+    private String fullName;
     private final Role role;
-    private final String passwordHash;
-    private final String passwordSalt;
-    private final String bio;
-    private final String employeeId;
+    private String passwordHash;
+    private String passwordSalt;
+    private String bio;
+    private String employeeId;
+    private String avatarPath;
+    private boolean active = true;
 
     public User(String username,
                 String fullName,
@@ -29,6 +31,7 @@ public class User implements Serializable {
         this.passwordSalt = passwordSalt;
         this.bio = bio;
         this.employeeId = employeeId;
+        this.avatarPath = "";
     }
 
     public String getUsername() {
@@ -58,5 +61,40 @@ public class User implements Serializable {
     public String getEmployeeId() {
         return employeeId;
     }
-}
 
+    public String getAvatarPath() {
+        return avatarPath;
+    }
+
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public void setPasswordSalt(String passwordSalt) {
+        this.passwordSalt = passwordSalt;
+    }
+
+    public void setBio(String bio) {
+        this.bio = bio;
+    }
+
+    public void setEmployeeId(String employeeId) {
+        this.employeeId = employeeId;
+    }
+
+    public void setAvatarPath(String avatarPath) {
+        this.avatarPath = avatarPath;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+}

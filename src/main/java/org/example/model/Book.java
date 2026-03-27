@@ -161,6 +161,10 @@ public class Book implements Serializable {
         dueDate = null;
     }
 
+    public void setCustomDueDate(LocalDate customDueDate) {
+        this.dueDate = customDueDate;
+    }
+
     private void setGenresInternal(List<String> newGenres) {
         genres = new ArrayList<>();
         if (newGenres != null) {
@@ -171,5 +175,17 @@ public class Book implements Serializable {
             }
         }
         genre = genres.isEmpty() ? null : String.join(" / ", genres);
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public void setGenres(List<String> newGenres) {
+        setGenresInternal(newGenres);
     }
 }

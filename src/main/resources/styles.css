@@ -102,6 +102,8 @@
 .portal-card {
     -fx-background-color: #ffffff;
     -fx-border-color: #dbe5f0;
+    -fx-border-radius: 14px;
+    -fx-background-radius: 14px;
     -fx-effect: dropshadow(gaussian, rgba(10,36,58,0.06), 14, 0.2, 0, 4);
 }
 
@@ -267,6 +269,14 @@
 
 .form-grid .label {
     -fx-text-fill: #1a2937;
+}
+
+.aligned-block {
+    -fx-padding: 2px 0 2px 0;
+}
+
+.form-grid {
+    -fx-alignment: top-left;
 }
 
 .stats-row {
@@ -438,4 +448,46 @@
 .page-scroll .scroll-bar:vertical .track {
     -fx-background-color: rgba(15, 70, 92, 0.08);
     -fx-background-radius: 999px;
+}
+
+/* PDF reader UI */
+.pdf-reader-card {
+    -fx-background-color: linear-gradient(to bottom, #f8fbff, #f2f7fd);
+    -fx-border-color: #d6e2ef;
+    -fx-border-radius: 14px;
+    -fx-background-radius: 14px;
+}
+
+.pdf-toolbar {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d9e4f1;
+    -fx-border-radius: 10px;
+    -fx-background-radius: 10px;
+    -fx-padding: 10px;
+}
+
+.pdf-page-wrap {
+    -fx-background-color: linear-gradient(to bottom, #f6f9fc, #edf3f9);
+    -fx-border-color: #d7e1ec;
+    -fx-border-radius: 12px;
+    -fx-background-radius: 12px;
+}
+
+.pdf-page-image {
+    -fx-effect: dropshadow(gaussian, rgba(8, 25, 45, 0.25), 18, 0.2, 0, 6);
+}
+
+.pdf-pagination > .pagination-control > .control-box {
+    -fx-background-color: transparent;
+}
+
+.pdf-pagination > .pagination-control > .control-box > .left-arrow-button,
+.pdf-pagination > .pagination-control > .control-box > .right-arrow-button {
+    -fx-background-color: #e8eef6;
+    -fx-background-radius: 8px;
+}
+
+.pdf-pagination > .pagination-control > .control-box > .left-arrow-button:hover,
+.pdf-pagination > .pagination-control > .control-box > .right-arrow-button:hover {
+    -fx-background-color: #dbe6f2;
 }
