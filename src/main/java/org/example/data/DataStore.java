@@ -8,6 +8,7 @@ import org.example.model.BookStatus;
 import org.example.model.Notification;
 import org.example.model.Role;
 import org.example.model.User;
+import org.example.pdf.PDFHighlightManager;
 import org.example.security.PasswordUtil;
 
 import java.io.EOFException;
@@ -51,6 +52,8 @@ public class DataStore {
     private final Map<String, Integer> bookBookmarks = new HashMap<>();
     private final Map<String, Set<Integer>> bookHighlights = new HashMap<>();
     private final Map<String, List<String>> textHighlights = new HashMap<>();
+    // New: Interactive PDF highlights for text selection
+    private final Map<String, Map<String, List<PDFHighlightManager.HighlightData>>> interactiveHighlights = new HashMap<>();
     private SessionState sessionState;
 
     private final ObservableList<Book> availableBooks = FXCollections.observableArrayList();
@@ -100,6 +103,7 @@ public class DataStore {
             Object bookmarkObj = null;
             Object highlightObj = null;
             Object textHighlightObj = null;
+            Object interactiveHighlightObj = null;
             Object sessionObj = null;
             try {
                 draftObj = input.readObject();
@@ -107,6 +111,7 @@ public class DataStore {
                 bookmarkObj = input.readObject();
                 highlightObj = input.readObject();
                 textHighlightObj = input.readObject();
+                interactiveHighlightObj = input.readObject();
                 sessionObj = input.readObject();
             } catch (EOFException ignored) {
                 // backward compatibility
@@ -119,6 +124,7 @@ public class DataStore {
             bookBookmarks.clear();
             bookHighlights.clear();
             textHighlights.clear();
+            interactiveHighlights.clear();
 
             if (userObj instanceof List<?> userList) {
                 userList.stream().filter(User.class::isInstance).map(User.class::cast).forEach(users::add);
@@ -163,6 +169,14 @@ public class DataStore {
                     }
                 }
             }
+            if (interactiveHighlightObj instanceof Map<?, ?> map) {
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() instanceof String key && entry.getValue() instanceof Map<?, ?> innerMap) {
+                        Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = new HashMap<>();
+                        interactiveHighlights.put(key, userHighlights);
+                    }
+                }
+            }
             if (sessionObj instanceof SessionState state) {
                 sessionState = state;
             }
@@ -188,6 +202,7 @@ public class DataStore {
                 output.writeObject(new HashMap<>(bookBookmarks));
                 output.writeObject(new HashMap<>(bookHighlights));
                 output.writeObject(new HashMap<>(textHighlights));
+                output.writeObject(new HashMap<>(interactiveHighlights));
                 output.writeObject(sessionState);
             }
         } catch (IOException ignored) {
@@ -668,6 +683,102 @@ public class DataStore {
 
     public List<String> getTextHighlights(String username, String bookId) {
         return new ArrayList<>(textHighlights.getOrDefault(username + "::" + bookId, List.of()));
+    }
+
+    // ============ New: Interactive PDF Text Highlighting ============
+    /**
+     * Add an interactive text highlight for a user on a specific book page
+     */
+    public void addInteractiveHighlight(String username, String bookId, int pageNum, float x, float y, float width, float height, String text) {
+        if (username == null || bookId == null) return;
+        
+        String userKey = username + "::" + bookId;
+        Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = 
+            interactiveHighlights.computeIfAbsent(userKey, k -> new HashMap<>());
+        
+        String pageKey = "page_" + pageNum;
+        List<PDFHighlightManager.HighlightData> pageHighlights = 
+            userHighlights.computeIfAbsent(pageKey, k -> new ArrayList<>());
+        
+        pageHighlights.add(new PDFHighlightManager.HighlightData(pageNum, x, y, width, height, text));
+        save();
+    }
+
+    /**
+     * Get all interactive highlights for a user on a specific page
+     */
+    public List<PDFHighlightManager.HighlightData> getInteractiveHighlights(String username, String bookId, int pageNum) {
+        String userKey = username + "::" + bookId;
+        String pageKey = "page_" + pageNum;
+        
+        Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = interactiveHighlights.get(userKey);
+        if (userHighlights == null) return List.of();
+        
+        List<PDFHighlightManager.HighlightData> pageHighlights = userHighlights.get(pageKey);
+        return pageHighlights == null ? List.of() : new ArrayList<>(pageHighlights);
+    }
+
+    /**
+     * Get all interactive highlights for a user across all pages of a book
+     */
+    public List<PDFHighlightManager.HighlightData> getAllInteractiveHighlights(String username, String bookId) {
+        String userKey = username + "::" + bookId;
+        Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = interactiveHighlights.get(userKey);
+        
+        if (userHighlights == null) return List.of();
+        
+        List<PDFHighlightManager.HighlightData> allHighlights = new ArrayList<>();
+        userHighlights.values().forEach(allHighlights::addAll);
+        return allHighlights;
+    }
+
+    /**
+     * Remove an interactive highlight
+     */
+    public void removeInteractiveHighlight(String username, String bookId, int pageNum, float x, float y) {
+        String userKey = username + "::" + bookId;
+        String pageKey = "page_" + pageNum;
+        
+        Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = interactiveHighlights.get(userKey);
+        if (userHighlights != null) {
+            List<PDFHighlightManager.HighlightData> pageHighlights = userHighlights.get(pageKey);
+            if (pageHighlights != null) {
+                pageHighlights.removeIf(h -> Math.abs(h.x - x) < 2 && Math.abs(h.y - y) < 2);
+                if (pageHighlights.isEmpty()) {
+                    userHighlights.remove(pageKey);
+                }
+            }
+            if (userHighlights.isEmpty()) {
+                interactiveHighlights.remove(userKey);
+            }
+        }
+        save();
+    }
+
+    /**
+     * Clear all interactive highlights for a user on a specific page
+     */
+    public void clearPageInteractiveHighlights(String username, String bookId, int pageNum) {
+        String userKey = username + "::" + bookId;
+        String pageKey = "page_" + pageNum;
+        
+        Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = interactiveHighlights.get(userKey);
+        if (userHighlights != null) {
+            userHighlights.remove(pageKey);
+            if (userHighlights.isEmpty()) {
+                interactiveHighlights.remove(userKey);
+            }
+        }
+        save();
+    }
+
+    /**
+     * Clear all interactive highlights for a user on a book
+     */
+    public void clearAllInteractiveHighlights(String username, String bookId) {
+        String userKey = username + "::" + bookId;
+        interactiveHighlights.remove(userKey);
+        save();
     }
 
     public void saveSessionState(String username, String screen, String selectedBookId) {

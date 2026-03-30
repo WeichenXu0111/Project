@@ -12,6 +12,7 @@ import javafx.collections.transformation.FilteredList;
 import javafx.collections.transformation.SortedList;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
+import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
@@ -30,6 +31,8 @@ import org.example.model.BookStatus;
 import org.example.model.Notification;
 import org.example.model.Role;
 import org.example.model.User;
+import org.example.pdf.InteractivePDFReader;
+import org.example.pdf.PDFHighlightManager;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -551,111 +554,131 @@ public class App extends Application {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("PDF Reader - " + book.getTitle());
         dialog.setHeaderText(saveProgress
-                ? "Read directly on PDF pages (bookmark + highlight enabled)"
-                : "Preview mode (read directly on PDF pages)");
+                ? "📌 Interactive Reading (Drag to highlight text, bookmark enabled)"
+                : "👁️ Preview mode (read-only)");
+
+        // Store interactive readers for each page
+        Map<Integer, InteractivePDFReader> readerMap = new HashMap<>();
+        
+        // Current page index holder
+        int[] currentPageIndex = {initialPage - 1};
+
+        // Create interactive reader for initial page
+        InteractivePDFReader currentReader = new InteractivePDFReader(pages.get(currentPageIndex[0]), initialPage);
+        readerMap.put(initialPage, currentReader);
+        loadHighlightsForPage(currentReader, initialPage, book.getId());
 
         // UI components for page indicator and highlights
         Label pageIndicator = new Label();
-        Label pageHighlightInfo = new Label();
-        Label textHighlightInfo = new Label();
-        updateHighlightInfo(pageHighlightInfo, book.getId());
-        updateTextHighlightInfo(textHighlightInfo, book.getId());
-
+        Label selectionInfo = new Label("💡 Tip: Drag to select text on the page to highlight");
+        selectionInfo.getStyleClass().add("muted-text");
+        Label interactiveHighlightInfo = new Label();
+        
         // Pagination control for navigating PDF pages
-        Pagination pagination = new Pagination(pages.size(), initialPage - 1);
+        Pagination pagination = new Pagination(pages.size(), currentPageIndex[0]);
         pagination.getStyleClass().add("pdf-pagination");
-        pagination.setPageFactory(index -> buildPdfPageView(pages.get(index), index + 1, pageIndicator));
-        updatePageIndicator(pageIndicator, initialPage, pages.size());
-
-        // Save bookmark when page changes (only in saveProgress mode)
-        pagination.currentPageIndexProperty().addListener((obs, oldV, newV) -> {
-            int currentPage = newV.intValue() + 1;
-            updatePageIndicator(pageIndicator, currentPage, pages.size());
+        pagination.setPageFactory(index -> {
+            InteractivePDFReader reader = readerMap.getOrDefault(index + 1, 
+                new InteractivePDFReader(pages.get(index), index + 1));
+            
+            loadHighlightsForPage(reader, index + 1, book.getId());
+            readerMap.put(index + 1, reader);
+            currentPageIndex[0] = index;
+            
+            updatePageIndicator(pageIndicator, index + 1, pages.size());
+            updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), index + 1);
+            
             if (saveProgress) {
-                dataStore.saveBookmark(currentUser.getUsername(), book.getId(), currentPage);
+                dataStore.saveBookmark(currentUser.getUsername(), book.getId(), index + 1);
+            }
+            
+            return reader.getNode();
+        });
+        
+        updatePageIndicator(pageIndicator, initialPage, pages.size());
+        updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), initialPage);
+
+        // Set selection callback
+        currentReader.setSelectionCallback((text, x, y, width, height) -> {
+            if (saveProgress) {
+                dataStore.addInteractiveHighlight(currentUser.getUsername(), book.getId(), initialPage, x, y, width, height, text);
+                updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), initialPage);
             }
         });
 
         // Navigation buttons
-        Button prev = new Button("Previous");
+        Button prev = new Button("◀ Previous");
         prev.getStyleClass().add("secondary-button");
         prev.setOnAction(e -> {
             int current = pagination.getCurrentPageIndex();
             if (current > 0) pagination.setCurrentPageIndex(current - 1);
         });
 
-        Button next = new Button("Next");
+        Button next = new Button("Next ▶");
         next.getStyleClass().add("secondary-button");
         next.setOnAction(e -> {
             int current = pagination.getCurrentPageIndex();
             if (current < pages.size() - 1) pagination.setCurrentPageIndex(current + 1);
         });
 
-        // Highlight current page button (only enabled in saveProgress mode)
-        Button addPageHighlight = new Button("Highlight Current Page");
-        addPageHighlight.getStyleClass().add("primary-button");
-        addPageHighlight.setDisable(!saveProgress);
-        addPageHighlight.setOnAction(e -> {
-            int currentPage = pagination.getCurrentPageIndex() + 1;
-            dataStore.addHighlight(currentUser.getUsername(), book.getId(), currentPage);
-            updateHighlightInfo(pageHighlightInfo, book.getId());
+        // Clear highlights button
+        Button clearHighlights = new Button("🗑️ Clear Highlights");
+        clearHighlights.getStyleClass().add("danger-button");
+        clearHighlights.setDisable(!saveProgress);
+        clearHighlights.setOnAction(e -> {
+            if (new Alert(Alert.AlertType.CONFIRMATION, "Clear all highlights on this page?")
+                    .showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            
+            int page = pagination.getCurrentPageIndex() + 1;
+            dataStore.clearPageInteractiveHighlights(currentUser.getUsername(), book.getId(), page);
+            
+            InteractivePDFReader reader = readerMap.get(page);
+            if (reader != null) reader.clearHighlights();
+            
+            updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), page);
         });
 
-        // Text highlight input area
-        TextArea textHighlightInput = new TextArea();
-        textHighlightInput.setPromptText("Paste selected text/snippet to highlight and save for your record...");
-        textHighlightInput.setPrefRowCount(2);
-        textHighlightInput.setWrapText(true);
-        textHighlightInput.setDisable(!saveProgress);
-
-        // Save text highlight button
-        Button addTextHighlight = new Button("Save Text Highlight");
-        addTextHighlight.getStyleClass().add("secondary-button");
-        addTextHighlight.setDisable(!saveProgress);
-        addTextHighlight.setOnAction(e -> {
-            String snippet = textHighlightInput.getText() == null ? "" : textHighlightInput.getText().trim();
-            if (snippet.isBlank()) {
+        // Export highlights button (only in saveProgress mode)
+        Button exportHighlights = new Button("💾 Export Highlights");
+        exportHighlights.getStyleClass().add("secondary-button");
+        exportHighlights.setDisable(!saveProgress);
+        exportHighlights.setOnAction(e -> {
+            List<PDFHighlightManager.HighlightData> allHighlights = 
+                dataStore.getAllInteractiveHighlights(currentUser.getUsername(), book.getId());
+            if (allHighlights.isEmpty()) {
+                new Alert(Alert.AlertType.INFORMATION, "No highlights to export.").showAndWait();
                 return;
             }
-            dataStore.addTextHighlight(currentUser.getUsername(), book.getId(), snippet);
-            textHighlightInput.clear();
-            updateTextHighlightInfo(textHighlightInfo, book.getId());
-        });
-
-        // Refresh highlights button
-        Button refreshHighlights = new Button("Refresh Highlights");
-        refreshHighlights.getStyleClass().add("secondary-button");
-        refreshHighlights.setOnAction(e -> {
-            updateHighlightInfo(pageHighlightInfo, book.getId());
-            updateTextHighlightInfo(textHighlightInfo, book.getId());
+            String summary = String.format("Total highlights: %d pages with highlights", 
+                allHighlights.stream().map(h -> h.page).distinct().count());
+            new Alert(Alert.AlertType.INFORMATION, summary).showAndWait();
         });
 
         // Toolbar with navigation and highlight controls
-        HBox toolbar = new HBox(10, prev, next, pageIndicator, addPageHighlight, refreshHighlights);
+        HBox toolbar = new HBox(10, prev, next, pageIndicator, new Separator(Orientation.VERTICAL),
+                clearHighlights, exportHighlights);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.getStyleClass().add("pdf-toolbar");
-
-        // Text highlight actions row
-        HBox textHighlightActions = new HBox(8, addTextHighlight);
-        textHighlightActions.setAlignment(Pos.CENTER_LEFT);
-        textHighlightActions.getStyleClass().add("aligned-block");
+        HBox.setHgrow(pageIndicator, Priority.ALWAYS);
 
         // Main content layout
-        VBox content = new VBox(10, toolbar, pagination, pageHighlightInfo, textHighlightInput, textHighlightActions, textHighlightInfo);
+        VBox content = new VBox(10, toolbar, selectionInfo, pagination, interactiveHighlightInfo);
         content.setPadding(new Insets(12));
-        content.setPrefSize(900, 700);
+        content.setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
+        content.setMinSize(620, 420);
+        content.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
         content.getStyleClass().add("pdf-reader-card");
+        VBox.setVgrow(pagination, Priority.ALWAYS);
 
+        dialog.setResizable(true);
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CLOSE);
-        dialog.getDialogPane().setPrefSize(980, 780);
+        dialog.getDialogPane().setPrefSize(Region.USE_COMPUTED_SIZE, Region.USE_COMPUTED_SIZE);
 
         // Start a background timer to check for borrowing period expiration during reading
         Timeline expirationChecker = new Timeline(new KeyFrame(Duration.seconds(30), e -> {
             if (saveProgress && book.getDueDate() != null && LocalDate.now().isAfter(book.getDueDate())) {
-                // Close the reader dialog
                 dialog.getDialogPane().getScene().getWindow().hide();
-                // Show expiration warning and auto-return
                 Alert a = new Alert(Alert.AlertType.WARNING, "Borrow period expired. The book has been auto-returned.");
                 a.showAndWait();
                 dataStore.autoReturnExpiredBooks();
@@ -670,12 +693,31 @@ public class App extends Application {
         // Stop the expiration checker after dialog closes
         expirationChecker.stop();
 
-        // Save bookmark on close if in saveProgress mode
+        // Save final bookmark state
         if (saveProgress) {
-            int currentPage = pagination.getCurrentPageIndex() + 1;
-            dataStore.saveBookmark(currentUser.getUsername(), book.getId(), currentPage);
+            int finalPage = pagination.getCurrentPageIndex() + 1;
+            dataStore.saveBookmark(currentUser.getUsername(), book.getId(), finalPage);
             saveSession("Reader", book.getId());
         }
+    }
+
+    private void loadHighlightsForPage(InteractivePDFReader reader, int pageNum, String bookId) {
+        List<PDFHighlightManager.HighlightData> highlights = 
+            dataStore.getInteractiveHighlights(currentUser.getUsername(), bookId, pageNum);
+        for (PDFHighlightManager.HighlightData h : highlights) {
+            reader.addHighlight(h);
+        }
+    }
+
+    private void updateInteractiveHighlightInfo(Label label, String bookId, int pageNum) {
+        List<PDFHighlightManager.HighlightData> highlights = 
+            dataStore.getInteractiveHighlights(currentUser.getUsername(), bookId, pageNum);
+        if (highlights.isEmpty()) {
+            label.setText("✨ No highlights on this page");
+        } else {
+            label.setText(String.format("✨ Highlights on this page: %d", highlights.size()));
+        }
+        label.getStyleClass().setAll("muted-text");
     }
 
     private javafx.scene.Node buildPdfPageView(Image pageImage, int pageNumber, Label pageIndicator) {
@@ -1060,6 +1102,7 @@ public class App extends Application {
         add.setOnAction(e -> showAddUserDialog(msg));
 
         Button edit = new Button("Edit User");
+        edit.getStyleClass().add("secondary-button");
         edit.setOnAction(e -> {
             User user = table.getSelectionModel().getSelectedItem();
             if (user == null) { setMessage(msg, "Select a user first.", false); return; }
