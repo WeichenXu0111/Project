@@ -19,6 +19,7 @@ import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
+import javafx.scene.shape.Circle;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -58,6 +59,8 @@ public class App extends Application {
     private BorderPane root; // Root layout container
     private Scene scene; // Main scene
     private User currentUser; // Currently logged-in user
+    private ImageView headerAvatarView;
+    private Label headerAvatarFallback;
 
     public static void launchApp(String[] args) {
         launch(args);
@@ -118,10 +121,24 @@ public class App extends Application {
             root.setCenter(buildLanding());
         });
 
+        headerAvatarView = new ImageView();
+        headerAvatarView.getStyleClass().add("header-avatar-image");
+        headerAvatarView.setFitWidth(36);
+        headerAvatarView.setFitHeight(36);
+        headerAvatarView.setPreserveRatio(false);
+        headerAvatarView.setClip(new Circle(18, 18, 18));
+
+        headerAvatarFallback = new Label("U");
+        headerAvatarFallback.getStyleClass().add("header-avatar-fallback");
+
+        StackPane avatarBox = new StackPane(headerAvatarView, headerAvatarFallback);
+        avatarBox.getStyleClass().add("header-avatar");
+        Tooltip.install(avatarBox, new Tooltip("User avatar"));
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        HBox header = new HBox(12, brandRow, spacer, homeBtn, notificationsBtn, profileBtn, crashBtn, logoutBtn);
+        HBox header = new HBox(12, brandRow, spacer, homeBtn, notificationsBtn, profileBtn, crashBtn, logoutBtn, avatarBox);
         header.setPadding(new Insets(14, 24, 14, 24));
         header.setAlignment(Pos.CENTER_LEFT);
         header.getStyleClass().add("app-header");
@@ -132,11 +149,54 @@ public class App extends Application {
             notificationsBtn.setVisible(loggedIn); notificationsBtn.setManaged(loggedIn);
             logoutBtn.setVisible(loggedIn); logoutBtn.setManaged(loggedIn);
             crashBtn.setVisible(loggedIn); crashBtn.setManaged(loggedIn);
+            avatarBox.setVisible(loggedIn); avatarBox.setManaged(loggedIn);
+            refreshHeaderAvatar();
         };
         root.centerProperty().addListener((a, b, c) -> update.run());
         update.run();
 
         return header;
+    }
+
+    private void refreshHeaderAvatar() {
+        if (headerAvatarView == null || headerAvatarFallback == null) {
+            return;
+        }
+        Image avatar = resolveAvatarImage(currentUser);
+        if (avatar != null) {
+            headerAvatarView.setImage(avatar);
+            headerAvatarFallback.setVisible(false);
+            headerAvatarFallback.setManaged(false);
+        } else {
+            headerAvatarView.setImage(null);
+            headerAvatarFallback.setText(currentUser != null && !safe(currentUser.getFullName()).isBlank()
+                    ? safe(currentUser.getFullName()).substring(0, 1).toUpperCase()
+                    : "U");
+            headerAvatarFallback.setVisible(true);
+            headerAvatarFallback.setManaged(true);
+        }
+    }
+
+    private Image resolveAvatarImage(User user) {
+        if (user != null) {
+            String avatarPath = safe(user.getAvatarPath()).trim();
+            if (!avatarPath.isBlank()) {
+                File avatarFile = new File(avatarPath);
+                if (avatarFile.exists() && avatarFile.isFile()) {
+                    try {
+                        return new Image(avatarFile.toURI().toString(), 36, 36, false, true);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+        try {
+            if (getClass().getResource("/logo.png") != null) {
+                return new Image(getClass().getResource("/logo.png").toExternalForm(), 36, 36, false, true);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private ImageView tryBuildLogo() {
@@ -578,28 +638,28 @@ public class App extends Application {
         Pagination pagination = new Pagination(pages.size(), currentPageIndex[0]);
         pagination.getStyleClass().add("pdf-pagination");
         pagination.setPageFactory(index -> {
-            InteractivePDFReader reader = readerMap.getOrDefault(index + 1, 
-                new InteractivePDFReader(pages.get(index), index + 1));
-            
-            // Set selection callback properly for any page
+            final int pageNum = index + 1;
+            InteractivePDFReader reader = readerMap.getOrDefault(pageNum,
+                new InteractivePDFReader(pages.get(index), pageNum));
+
             reader.setSelectionCallback((text, x, y, width, height) -> {
                 if (saveProgress) {
-                    dataStore.addInteractiveHighlight(currentUser.getUsername(), book.getId(), index + 1, x, y, width, height, text);
-                    updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), index + 1);
-                    // Add highlight visibly to prevent needing a full reload
-                    reader.addHighlight(new org.example.pdf.PDFHighlightManager.HighlightData(index + 1, x, y, width, height, text));
+                    dataStore.addInteractiveHighlight(currentUser.getUsername(), book.getId(), pageNum, x, y, width, height, text);
+                    // Render immediately on the current page after drag release.
+                    reader.addHighlight(new PDFHighlightManager.HighlightData(pageNum, x, y, width, height, text));
+                    updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), pageNum);
                 }
             });
 
-            loadHighlightsForPage(reader, index + 1, book.getId());
-            readerMap.put(index + 1, reader);
+            loadHighlightsForPage(reader, pageNum, book.getId());
+            readerMap.put(pageNum, reader);
             currentPageIndex[0] = index;
             
-            updatePageIndicator(pageIndicator, index + 1, pages.size());
-            updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), index + 1);
+            updatePageIndicator(pageIndicator, pageNum, pages.size());
+            updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), pageNum);
             
             if (saveProgress) {
-                dataStore.saveBookmark(currentUser.getUsername(), book.getId(), index + 1);
+                dataStore.saveBookmark(currentUser.getUsername(), book.getId(), pageNum);
             }
             
             return reader.getNode();
@@ -706,6 +766,7 @@ public class App extends Application {
     }
 
     private void loadHighlightsForPage(InteractivePDFReader reader, int pageNum, String bookId) {
+        reader.clearHighlights();
         List<PDFHighlightManager.HighlightData> highlights = 
             dataStore.getInteractiveHighlights(currentUser.getUsername(), bookId, pageNum);
         for (PDFHighlightManager.HighlightData h : highlights) {
@@ -1160,8 +1221,12 @@ public class App extends Application {
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
             DataStore.RegistrationResult r = dataStore.registerUser(username.getText().trim(), fullName.getText().trim(), password.getText(), role.getValue(), "", "");
-            setMessage(msg, r.message(), r.success());
-            root.setCenter(buildLibrarianDashboard());
+            if (r.success()) {
+                setMessage(msg, r.message(), true);
+                root.setCenter(buildLibrarianDashboard());
+            } else {
+                new Alert(Alert.AlertType.ERROR, r.message()).showAndWait();
+            }
         }
     }
 
@@ -1173,15 +1238,20 @@ public class App extends Application {
         TextField employee = new TextField(safe(user.getEmployeeId()));
 
         GridPane g = formGrid();
-        g.addRow(0, formLabel("Full Name"), fullName);
-        g.addRow(1, formLabel("Bio"), bio);
-        g.addRow(2, formLabel("Employee ID"), employee);
+        int r = 0;
+        g.addRow(r++, formLabel("Full Name"), fullName);
+        if (user.getRole() == Role.AUTHOR) {
+            g.addRow(r++, formLabel("Bio"), bio);
+        }
+        if (user.getRole() == Role.LIBRARIAN) {
+            g.addRow(r++, formLabel("Employee ID"), employee);
+        }
 
         d.getDialogPane().setContent(g);
         d.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         if (d.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
-            DataStore.ActionResult r = dataStore.updateUserProfile(user, fullName.getText().trim(), "", bio.getText().trim(), employee.getText().trim());
-            setMessage(msg, r.message(), r.success());
+            DataStore.ActionResult result = dataStore.updateUserProfile(user, fullName.getText().trim(), "", bio.getText().trim(), employee.getText().trim());
+            setMessage(msg, result.message(), result.success());
             root.setCenter(buildLibrarianDashboard());
         }
     }
@@ -1253,8 +1323,8 @@ public class App extends Application {
         g.addRow(r++, formLabel("Password Strength"), strength);
         if (currentUser.getRole() == Role.AUTHOR) {
             g.addRow(r++, formLabel("Bio"), bio);
-            g.addRow(r++, formLabel("Profile Picture"), avatarRow);
         }
+        g.addRow(r++, formLabel("Profile Picture"), avatarRow);
         if (currentUser.getRole() == Role.LIBRARIAN) g.addRow(r++, formLabel("Employee ID"), employee);
 
         Label msg = new Label();
@@ -1272,9 +1342,10 @@ public class App extends Application {
                     newPass.getText(),
                     bio.getText().trim(),
                     employee.getText().trim());
-            if (result.success() && currentUser.getRole() == Role.AUTHOR) {
+            if (result.success()) {
                 currentUser.setAvatarPath(avatarPath.getText().trim());
                 dataStore.saveData();
+                refreshHeaderAvatar();
             }
             setMessage(msg, result.message(), result.success());
 

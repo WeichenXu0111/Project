@@ -181,6 +181,30 @@
     -fx-background-color: #b34040;
 }
 
+.header-avatar {
+    -fx-min-width: 36px;
+    -fx-min-height: 36px;
+    -fx-pref-width: 36px;
+    -fx-pref-height: 36px;
+    -fx-max-width: 36px;
+    -fx-max-height: 36px;
+    -fx-background-color: #d4e2ef;
+    -fx-background-radius: 999px;
+    -fx-border-color: rgba(255,255,255,0.75);
+    -fx-border-width: 1.2px;
+    -fx-border-radius: 999px;
+}
+
+.header-avatar-image {
+    -fx-background-radius: 999px;
+}
+
+.header-avatar-fallback {
+    -fx-text-fill: #0b2a43;
+    -fx-font-weight: 700;
+    -fx-font-size: 13px;
+}
+
 .form-message {
     -fx-font-size: 12px;
 }

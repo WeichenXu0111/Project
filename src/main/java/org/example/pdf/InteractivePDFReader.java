@@ -6,7 +6,6 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseEvent;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
@@ -119,7 +118,14 @@ public class InteractivePDFReader {
      * Add a highlight to this page
      */
     public void addHighlight(PDFHighlightManager.HighlightData highlight) {
-        if (highlight.page == pageNumber) {
+        if (highlight.page != pageNumber) {
+            return;
+        }
+        // Avoid duplicate rectangles when data is reloaded for the same page.
+        boolean exists = pageHighlights.stream().anyMatch(h ->
+            h.x == highlight.x && h.y == highlight.y && h.width == highlight.width && h.height == highlight.height
+        );
+        if (!exists) {
             pageHighlights.add(highlight);
             redraw();
         }
@@ -184,15 +190,40 @@ public class InteractivePDFReader {
     }
 
     private void drawHighlightRect(GraphicsContext gc, float x, float y, float width, float height) {
-        double sx = x * scaleFactor;
-        double sy = y * scaleFactor;
-        double sw = width * scaleFactor;
-        double sh = height * scaleFactor;
+        double baseX = x;
+        double baseY = y;
+        double baseW = width;
+        double baseH = height;
 
-        // Draw an underline for highlight instead of rectangle
-        gc.setStroke(Color.color(1.0, 0.8, 0.0, 0.8)); // Yellow line
-        gc.setLineWidth(3);
-        gc.strokeLine(sx, sy + sh, sx + sw, sy + sh);
+        // Compatibility: treat legacy normalized values (0..1) as page-relative ratios.
+        if (baseW > 0 && baseW <= 1.0 && baseH > 0 && baseH <= 1.0 && baseX >= 0 && baseX <= 1.0 && baseY >= 0 && baseY <= 1.0) {
+            baseX *= pageImage.getWidth();
+            baseY *= pageImage.getHeight();
+            baseW *= pageImage.getWidth();
+            baseH *= pageImage.getHeight();
+        }
+
+        double sx = Math.max(0, baseX * scaleFactor);
+        double sy = Math.max(0, baseY * scaleFactor);
+        double sw = Math.max(0, baseW * scaleFactor);
+        double sh = Math.max(0, baseH * scaleFactor);
+
+        // Clip to visible canvas area so off-canvas values do not hide valid parts.
+        if (sx >= canvas.getWidth() || sy >= canvas.getHeight()) {
+            return;
+        }
+        sw = Math.min(sw, canvas.getWidth() - sx);
+        sh = Math.min(sh, canvas.getHeight() - sy);
+        if (sw < 2 || sh < 2) {
+            return;
+        }
+
+        // Draw a visible semi-transparent yellow rectangle.
+        gc.setFill(Color.color(1.0, 0.95, 0.0, 0.45));
+        gc.fillRect(sx, sy, sw, sh);
+        gc.setStroke(Color.color(0.95, 0.6, 0.0, 0.95));
+        gc.setLineWidth(1.5);
+        gc.strokeRect(sx, sy, sw, sh);
     }
 
     private void drawSelectionRect(GraphicsContext gc, Point2D start, Point2D end) {
@@ -201,10 +232,12 @@ public class InteractivePDFReader {
         float width = (float) Math.abs(end.getX() - start.getX());
         float height = (float) Math.abs(end.getY() - start.getY());
         
-        // Draw an underline for realtime selection instead of rectangle
-        gc.setStroke(Color.color(0.0, 0.5, 1.0, 0.8)); // Blue line
-        gc.setLineWidth(3);
-        gc.strokeLine(x, y + height, x + width, y + height);
+        // Draw a blue rectangle for selection
+        gc.setStroke(Color.color(0.0, 0.5, 1.0, 0.8)); // Blue border
+        gc.setLineWidth(2);
+        gc.strokeRect(x, y, width, height);
+        gc.setFill(Color.color(0.0, 0.5, 1.0, 0.2)); // Light blue fill
+        gc.fillRect(x, y, width, height);
     }
 
     /**

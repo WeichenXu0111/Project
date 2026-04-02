@@ -37,3 +37,7 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Local runtime database files (keep locally, do not commit)
+data/lms-data.dat
+**/data/lms-data.dat
