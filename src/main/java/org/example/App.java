@@ -581,6 +581,16 @@ public class App extends Application {
             InteractivePDFReader reader = readerMap.getOrDefault(index + 1, 
                 new InteractivePDFReader(pages.get(index), index + 1));
             
+            // Set selection callback properly for any page
+            reader.setSelectionCallback((text, x, y, width, height) -> {
+                if (saveProgress) {
+                    dataStore.addInteractiveHighlight(currentUser.getUsername(), book.getId(), index + 1, x, y, width, height, text);
+                    updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), index + 1);
+                    // Add highlight visibly to prevent needing a full reload
+                    reader.addHighlight(new org.example.pdf.PDFHighlightManager.HighlightData(index + 1, x, y, width, height, text));
+                }
+            });
+
             loadHighlightsForPage(reader, index + 1, book.getId());
             readerMap.put(index + 1, reader);
             currentPageIndex[0] = index;
@@ -598,13 +608,7 @@ public class App extends Application {
         updatePageIndicator(pageIndicator, initialPage, pages.size());
         updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), initialPage);
 
-        // Set selection callback
-        currentReader.setSelectionCallback((text, x, y, width, height) -> {
-            if (saveProgress) {
-                dataStore.addInteractiveHighlight(currentUser.getUsername(), book.getId(), initialPage, x, y, width, height, text);
-                updateInteractiveHighlightInfo(interactiveHighlightInfo, book.getId(), initialPage);
-            }
-        });
+        // Remove the hardcoded currentReader callback since factory handles it
 
         // Navigation buttons
         Button prev = new Button("◀ Previous");
@@ -927,6 +931,7 @@ public class App extends Application {
         Label msg = new Label();
 
         Button read = new Button("Read Selected");
+        read.getStyleClass().add("secondary-button");
         read.setOnAction(e -> {
             Book b = table.getSelectionModel().getSelectedItem();
             if (b == null) { setMessage(msg, "Select one book.", false); return; }
@@ -934,6 +939,7 @@ public class App extends Application {
         });
 
         Button edit = new Button("Edit Selected");
+        edit.getStyleClass().add("secondary-button");
         edit.setOnAction(e -> {
             Book b = table.getSelectionModel().getSelectedItem();
             if (b == null) { setMessage(msg, "Select one book.", false); return; }
@@ -946,6 +952,17 @@ public class App extends Application {
         delete.setOnAction(e -> {
             List<Book> selected = table.getSelectionModel().getSelectedItems();
             if (selected.isEmpty()) { setMessage(msg, "Select one or more books.", false); return; }
+
+            List<Book> borrowedBooks = selected.stream()
+                .filter(b -> b.getStatus() == org.example.model.BookStatus.BORROWED)
+                .collect(Collectors.toList());
+            if (!borrowedBooks.isEmpty()) {
+                String borrowedRecordStr = borrowedBooks.stream().map(org.example.model.Book::getTitle).collect(Collectors.joining("\n- "));
+                new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.ERROR, "Cannot delete the following book(s) because they are currently borrowed by someone:\n- " + borrowedRecordStr).showAndWait();
+                setMessage(msg, "Deletion cancelled. Some books are borrowed.", false);
+                return;
+            }
+
             if (new Alert(Alert.AlertType.CONFIRMATION, "Delete " + selected.size() + " selected books?").showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
             DataStore.ActionResult r = dataStore.bulkDeleteBooks(selected.stream().map(Book::getId).collect(Collectors.toList()), currentUser.getUsername());
             setMessage(msg, r.message(), r.success());

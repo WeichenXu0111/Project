@@ -189,14 +189,10 @@ public class InteractivePDFReader {
         double sw = width * scaleFactor;
         double sh = height * scaleFactor;
 
-        // Yellow highlight with transparency
-        gc.setFill(Color.color(1.0, 1.0, 0.0, 0.3));
-        gc.fillRect(sx, sy, sw, sh);
-        
-        // Border
-        gc.setStroke(Color.ORANGE);
-        gc.setLineWidth(1);
-        gc.strokeRect(sx, sy, sw, sh);
+        // Draw an underline for highlight instead of rectangle
+        gc.setStroke(Color.color(1.0, 0.8, 0.0, 0.8)); // Yellow line
+        gc.setLineWidth(3);
+        gc.strokeLine(sx, sy + sh, sx + sw, sy + sh);
     }
 
     private void drawSelectionRect(GraphicsContext gc, Point2D start, Point2D end) {
@@ -205,14 +201,10 @@ public class InteractivePDFReader {
         float width = (float) Math.abs(end.getX() - start.getX());
         float height = (float) Math.abs(end.getY() - start.getY());
         
-        // Light blue selection with transparency
-        gc.setFill(Color.color(0.0, 0.5, 1.0, 0.2));
-        gc.fillRect(x, y, width, height);
-        
-        // Border
-        gc.setStroke(Color.BLUE);
-        gc.setLineWidth(2);
-        gc.strokeRect(x, y, width, height);
+        // Draw an underline for realtime selection instead of rectangle
+        gc.setStroke(Color.color(0.0, 0.5, 1.0, 0.8)); // Blue line
+        gc.setLineWidth(3);
+        gc.strokeLine(x, y + height, x + width, y + height);
     }
 
     /**
