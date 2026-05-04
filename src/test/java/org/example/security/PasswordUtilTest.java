@@ -13,5 +13,15 @@ class PasswordUtilTest {
         assertTrue(PasswordUtil.verifyPassword("StrongPass123", salt, hash));
         assertFalse(PasswordUtil.verifyPassword("WrongPass", salt, hash));
     }
+
+    @Test
+    void generateSalt_ReturnsUniqueAndNonEmptyString() {
+        String salt1 = PasswordUtil.generateSalt();
+        String salt2 = PasswordUtil.generateSalt();
+        
+        assertNotNull(salt1);
+        assertFalse(salt1.isEmpty());
+        assertNotEquals(salt1, salt2, "Two generated salts should not be equal");
+    }
 }
 

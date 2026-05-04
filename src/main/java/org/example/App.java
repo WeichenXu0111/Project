@@ -15,6 +15,11 @@ import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.chart.BarChart;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.PieChart;
+import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -22,14 +27,20 @@ import javafx.scene.layout.*;
 import javafx.scene.shape.Circle;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.example.data.DataStore;
 import org.example.model.AuthorDraft;
 import org.example.model.Book;
+import org.example.model.BookRequest;
+import org.example.model.BookReview;
 import org.example.model.BookStatus;
 import org.example.model.Notification;
+import org.example.model.ReadingHistory;
 import org.example.model.Role;
 import org.example.model.User;
 import org.example.pdf.InteractivePDFReader;
@@ -38,6 +49,7 @@ import org.example.pdf.PDFHighlightManager;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -61,6 +73,7 @@ public class App extends Application {
     private User currentUser; // Currently logged-in user
     private ImageView headerAvatarView;
     private Label headerAvatarFallback;
+    private Runnable refreshStudentHistoryView = () -> {};
 
     public static void launchApp(String[] args) {
         launch(args);
@@ -354,6 +367,9 @@ public class App extends Application {
 
         Label title = new Label("Student / Staff Dashboard");
         title.getStyleClass().add("section-title");
+        Label subtitle = new Label("Borrow, read, review, and track your library activity in one place.");
+        subtitle.getStyleClass().add("muted-text");
+        VBox titleBlock = new VBox(2, title, subtitle);
 
         VBox statsA = statCard("Available Books", String.valueOf(dataStore.getAvailableBooks().size()));
         VBox statsB = statCard("My Borrowed", String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
@@ -377,6 +393,8 @@ public class App extends Application {
         VBox borrowActions = buildBorrowActions(catalogTable, () -> {
             ((Label) statsA.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
             ((Label) statsB.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
+            catalogTable.refresh();
+            refreshStudentHistoryView.run();
         });
 
         TableView<Book> borrowedTable = buildBorrowedBooksTable();
@@ -385,25 +403,42 @@ public class App extends Application {
             borrowedTable.setItems(dataStore.getBorrowedBooksBy(currentUser.getUsername()));
             ((Label) statsA.getChildren().get(0)).setText(String.valueOf(dataStore.getAvailableBooks().size()));
             ((Label) statsB.getChildren().get(0)).setText(String.valueOf(dataStore.getBorrowedBooksBy(currentUser.getUsername()).size()));
+            catalogTable.refresh();
+            refreshStudentHistoryView.run();
         });
 
-        VBox left = new VBox(10, new Label("Catalog"), filters, filterMsg, multiSelectTip, catalogTable, borrowActions);
-        left.getStyleClass().add("card");
+        Label catalogTitle = new Label("Catalog");
+        catalogTitle.getStyleClass().add("card-title");
+        VBox left = new VBox(10, catalogTitle, filters, filterMsg, multiSelectTip, catalogTable, borrowActions);
+        left.getStyleClass().addAll("card", "workspace-card");
         left.setPadding(new Insets(14));
         HBox.setHgrow(left, Priority.ALWAYS);
 
-        VBox right = new VBox(10, new Label("My Borrowed Books"), borrowedTable, borrowedActions);
-        right.getStyleClass().add("card");
+        Label borrowedTitle = new Label("My Borrowed Books");
+        borrowedTitle.getStyleClass().add("card-title");
+        VBox right = new VBox(10, borrowedTitle, borrowedTable, borrowedActions);
+        right.getStyleClass().addAll("card", "workspace-card");
         right.setPadding(new Insets(14));
         right.setPrefWidth(470);
 
         HBox bodyRow = new HBox(12, left, right);
-        VBox body = new VBox(14, stats, bodyRow);
+
+        TabPane taskTabs = new TabPane();
+        taskTabs.getStyleClass().add("portal-tabs");
+        taskTabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        Tab borrowTab = new Tab("Catalog & Borrowed", bodyRow);
+        Tab historyTab = new Tab("Reading History", buildReadingHistoryScreen());
+        Tab reviewTab = new Tab("Reviews & Ratings", buildReviewScreen());
+        Tab requestTab = new Tab("Request New Book", buildBookRequestScreen());
+        taskTabs.getTabs().addAll(borrowTab, historyTab, reviewTab, requestTab);
+        VBox.setVgrow(taskTabs, Priority.ALWAYS);
+
+        VBox body = new VBox(14, stats, taskTabs);
         body.setPadding(new Insets(0, 20, 20, 20));
 
         BorderPane pane = new BorderPane(body);
-        pane.setTop(title);
-        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        pane.setTop(titleBlock);
+        BorderPane.setMargin(titleBlock, new Insets(20, 20, 8, 20));
         return pane;
     }
 
@@ -413,6 +448,7 @@ public class App extends Application {
                 col("Title", Book::getTitle, 180),
                 col("Author", Book::getAuthorFullName, 150),
                 col("Genre", Book::getGenre, 120),
+                col("Rating", b -> ratingSummary(b.getId()), 110),
                 col("Publish Date", b -> formatDate(b.getApprovedDate()), 120),
                 col("Status", b -> b.getStatus().getDisplayName(), 130)
         );
@@ -484,6 +520,7 @@ public class App extends Application {
                 return;
             }
             showBookReader(selected, true);
+            if (onRefresh != null) onRefresh.run();
         });
 
         Button returnSelected = new Button("Return Selected (Partial Return)");
@@ -579,6 +616,252 @@ public class App extends Application {
         return box;
     }
 
+    private VBox buildReadingHistoryScreen() {
+        ObservableList<ReadingHistory> source = FXCollections.observableArrayList(dataStore.getReadingHistory(currentUser.getUsername()));
+        FilteredList<ReadingHistory> filtered = new FilteredList<>(source, h -> true);
+
+        TextField search = new TextField();
+        search.setPromptText("Search title or author...");
+        ComboBox<String> genre = new ComboBox<>();
+        genre.getItems().add("All");
+        genre.getItems().addAll(dataStore.getGenreOptions());
+        genre.getSelectionModel().selectFirst();
+        DatePicker from = new DatePicker();
+        from.setPromptText("Borrowed from");
+        DatePicker to = new DatePicker();
+        to.setPromptText("Borrowed to");
+
+        Runnable apply = () -> filtered.setPredicate(history -> {
+            String q = search.getText() == null ? "" : search.getText().toLowerCase().trim();
+            if (!q.isBlank()
+                    && !safe(history.getBookTitle()).toLowerCase().contains(q)
+                    && !safe(history.getAuthor()).toLowerCase().contains(q)) return false;
+            if (!"All".equals(genre.getValue()) && !safe(history.getGenre()).toLowerCase().contains(genre.getValue().toLowerCase())) return false;
+            if (from.getValue() != null && history.getBorrowDate().isBefore(from.getValue())) return false;
+            if (to.getValue() != null && history.getBorrowDate().isAfter(to.getValue())) return false;
+            return true;
+        });
+        search.textProperty().addListener((a, b, c) -> apply.run());
+        genre.valueProperty().addListener((a, b, c) -> apply.run());
+        from.valueProperty().addListener((a, b, c) -> apply.run());
+        to.valueProperty().addListener((a, b, c) -> apply.run());
+
+        TableView<ReadingHistory> table = new TableView<>(filtered);
+        table.getColumns().addAll(
+                typedCol("Book Title", ReadingHistory::getBookTitle, 190),
+                typedCol("Author", ReadingHistory::getAuthor, 150),
+                typedCol("Genre", ReadingHistory::getGenre, 130),
+                typedCol("Borrow Date", h -> formatDate(h.getBorrowDate()), 110),
+                typedCol("Return Date", h -> formatDate(h.getReturnDate()), 110),
+                typedCol("Duration", h -> h.getReadingDurationDays() + " day(s)", 105),
+                typedCol("Progress", h -> h.getProgressPercent() + "%", 90)
+        );
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        table.setPlaceholder(new Label("Borrow and read a book to build your history."));
+
+        Label insight = new Label(readingInsight(source));
+        insight.getStyleClass().add("muted-text");
+        Label badges = new Label(readingBadges(source));
+        badges.getStyleClass().add("status-pill");
+
+        Button exportCsv = new Button("Export CSV");
+        exportCsv.getStyleClass().add("secondary-button");
+        exportCsv.setOnAction(e -> exportReadingHistoryCsv(new ArrayList<>(filtered)));
+
+        Button exportPdf = new Button("Export PDF");
+        exportPdf.getStyleClass().add("secondary-button");
+        exportPdf.setOnAction(e -> exportReadingHistoryPdf(new ArrayList<>(filtered)));
+
+        HBox filters = new HBox(8, search, genre, from, to);
+        filters.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(search, Priority.ALWAYS);
+        HBox actionRow = new HBox(8, exportCsv, exportPdf);
+        actionRow.setAlignment(Pos.CENTER_LEFT);
+        PieChart genreChart = buildGenrePieChart(source);
+        BarChart<String, Number> progressChart = buildProgressBarChart(source);
+        HBox insights = new HBox(12, genreChart, progressChart);
+        insights.getStyleClass().add("chart-row");
+        HBox.setHgrow(insights.getChildren().get(0), Priority.ALWAYS);
+        HBox.setHgrow(insights.getChildren().get(1), Priority.ALWAYS);
+
+        refreshStudentHistoryView = () -> {
+            source.setAll(dataStore.getReadingHistory(currentUser.getUsername()));
+            apply.run();
+            insight.setText(readingInsight(source));
+            badges.setText(readingBadges(source));
+            refreshGenrePieChart(genreChart, source);
+            refreshProgressBarChart(progressChart, source);
+            table.refresh();
+        };
+
+        Label screenTitle = new Label("Reading History");
+        screenTitle.getStyleClass().add("card-title");
+        VBox box = new VBox(10, screenTitle, filters, insight, badges, insights, table, actionRow);
+        box.getStyleClass().add("task-surface");
+        box.setPadding(new Insets(14));
+        VBox.setVgrow(table, Priority.ALWAYS);
+        return box;
+    }
+
+    private VBox buildReviewScreen() {
+        TableView<Book> books = buildAvailableBooksTable();
+        books.setItems(dataStore.getCatalogBooks());
+
+        ListView<BookReview> reviews = new ListView<>();
+        reviews.setPlaceholder(new Label("Select a book to view reviews."));
+        reviews.setCellFactory(v -> new ListCell<>() {
+            @Override
+            protected void updateItem(BookReview review, boolean empty) {
+                super.updateItem(review, empty);
+                if (empty || review == null) { setText(null); setGraphic(null); return; }
+                Label title = new Label(stars(review.getRating()) + "  " + review.getDisplayName());
+                title.getStyleClass().add("card-title");
+                Label body = new Label(review.getReviewText());
+                body.setWrapText(true);
+                Label meta = new Label(formatDateTime(review.getSubmittedAt()) + " | Helpful: " + review.getHelpfulCount());
+                meta.getStyleClass().add("muted-text");
+                setGraphic(new VBox(3, title, body, meta));
+            }
+        });
+
+        Label rating = new Label("Select a book");
+        rating.getStyleClass().add("card-title");
+        Spinner<Integer> stars = new Spinner<>(1, 5, 5);
+        stars.setEditable(true);
+        TextArea reviewText = new TextArea();
+        reviewText.setPromptText("Write your review after borrowing this book...");
+        reviewText.setPrefRowCount(4);
+        CheckBox anonymous = new CheckBox("Submit anonymously");
+        ComboBox<String> sort = new ComboBox<>();
+        sort.getItems().addAll("Most Recent", "Most Helpful", "Highest Rating", "Lowest Rating");
+        sort.getSelectionModel().selectFirst();
+        Label msg = new Label();
+
+        Runnable refreshReviews = () -> {
+            Book selected = books.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                rating.setText("Select a book");
+                reviews.setItems(FXCollections.observableArrayList());
+                return;
+            }
+            rating.setText(selected.getTitle() + " - " + ratingSummary(selected.getId()));
+            List<BookReview> reviewData = new ArrayList<>(dataStore.getReviewsForBook(selected.getId()));
+            if ("Most Helpful".equals(sort.getValue())) {
+                reviewData.sort(Comparator.comparingInt(BookReview::getHelpfulCount).reversed()
+                        .thenComparing(BookReview::getSubmittedAt, Comparator.reverseOrder()));
+            } else if ("Highest Rating".equals(sort.getValue())) {
+                reviewData.sort(Comparator.comparingInt(BookReview::getRating).reversed()
+                        .thenComparing(BookReview::getSubmittedAt, Comparator.reverseOrder()));
+            } else if ("Lowest Rating".equals(sort.getValue())) {
+                reviewData.sort(Comparator.comparingInt(BookReview::getRating)
+                        .thenComparing(BookReview::getSubmittedAt, Comparator.reverseOrder()));
+            }
+            reviews.setItems(FXCollections.observableArrayList(reviewData));
+        };
+        books.getSelectionModel().selectedItemProperty().addListener((a, b, c) -> refreshReviews.run());
+        sort.valueProperty().addListener((a, b, c) -> refreshReviews.run());
+
+        Button submit = new Button("Submit / Update Review");
+        submit.getStyleClass().add("primary-button");
+        submit.setOnAction(e -> {
+            Book selected = books.getSelectionModel().getSelectedItem();
+            if (selected == null) { setMessage(msg, "Select a book first.", false); return; }
+            DataStore.ActionResult result = dataStore.submitReview(
+                    currentUser.getUsername(),
+                    selected.getId(),
+                    stars.getValue(),
+                    reviewText.getText(),
+                    anonymous.isSelected()
+            );
+            setMessage(msg, result.message(), result.success());
+            if (result.success()) {
+                reviewText.clear();
+                refreshReviews.run();
+                books.refresh();
+            }
+        });
+
+        Button helpful = new Button("Mark Review Helpful");
+        helpful.getStyleClass().add("secondary-button");
+        helpful.setOnAction(e -> {
+            BookReview selectedReview = reviews.getSelectionModel().getSelectedItem();
+            if (selectedReview == null) { setMessage(msg, "Select a review first.", false); return; }
+            DataStore.ActionResult result = dataStore.markReviewHelpful(selectedReview.getId(), currentUser.getUsername());
+            setMessage(msg, result.message(), result.success());
+            refreshReviews.run();
+        });
+
+        VBox right = new VBox(10, rating, new HBox(8, new Label("Sort"), sort, helpful), reviews, new Label("Your Review"), new HBox(8, new Label("Rating"), stars, anonymous), reviewText, submit, msg);
+        right.setPrefWidth(430);
+        HBox body = new HBox(12, books, right);
+        HBox.setHgrow(books, Priority.ALWAYS);
+        VBox box = new VBox(10, new Label("Book Reviews & Ratings"), body);
+        box.setPadding(new Insets(14));
+        return box;
+    }
+
+    private VBox buildBookRequestScreen() {
+        TextField title = new TextField();
+        title.setPromptText("Book title");
+        TextField author = new TextField();
+        author.setPromptText("Author");
+        ComboBox<String> genre = new ComboBox<>();
+        genre.getItems().addAll(dataStore.getGenreOptions());
+        genre.setPromptText("Genre");
+        TextArea reason = new TextArea();
+        reason.setPromptText("Why should the library add this book?");
+        reason.setPrefRowCount(4);
+        Label msg = new Label();
+
+        TableView<BookRequest> history = new TableView<>();
+        history.setItems(FXCollections.observableArrayList(dataStore.getBookRequestsByUser(currentUser.getUsername())));
+        history.getColumns().addAll(
+                typedCol("Title", BookRequest::getTitle, 170),
+                typedCol("Author", BookRequest::getAuthor, 140),
+                typedCol("Genre", BookRequest::getGenre, 120),
+                typedCol("Priority", BookRequest::getPriorityDisplay, 95),
+                typedCol("Status", r -> r.getStatus().getDisplayName(), 100),
+                typedCol("Submitted", r -> formatDateTime(r.getSubmittedAt()), 140),
+                typedCol("Librarian Note", BookRequest::getLibrarianNote, 180)
+        );
+        history.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        history.setPlaceholder(new Label("Your request history will appear here."));
+
+        Button submit = new Button("Send Request");
+        submit.getStyleClass().add("primary-button");
+        submit.setOnAction(e -> {
+            DataStore.ActionResult result = dataStore.requestNewBook(
+                    currentUser.getUsername(),
+                    title.getText(),
+                    author.getText(),
+                    genre.getValue(),
+                    reason.getText()
+            );
+            setMessage(msg, result.message(), result.success());
+            if (result.success()) {
+                title.clear();
+                author.clear();
+                genre.getSelectionModel().clearSelection();
+                reason.clear();
+                history.setItems(FXCollections.observableArrayList(dataStore.getBookRequestsByUser(currentUser.getUsername())));
+            }
+        });
+
+        GridPane form = formGrid();
+        form.addRow(0, formLabel("Title"), title);
+        form.addRow(1, formLabel("Author"), author);
+        form.addRow(2, formLabel("Genre"), genre);
+        form.addRow(3, formLabel("Reason"), reason);
+
+        VBox formBox = new VBox(10, new Label("Request a New Book"), form, submit, msg);
+        formBox.setPrefWidth(430);
+        HBox body = new HBox(12, formBox, history);
+        HBox.setHgrow(history, Priority.ALWAYS);
+        VBox box = new VBox(10, body);
+        box.setPadding(new Insets(14));
+        return box;
+    }
+
     private void showBookReader(Book book, boolean saveProgress) {
         // Check if borrowing period has expired before allowing reading
         if (saveProgress && book.getDueDate() != null && LocalDate.now().isAfter(book.getDueDate())) {
@@ -604,6 +887,9 @@ public class App extends Application {
         if (pages.isEmpty()) {
             new Alert(Alert.AlertType.ERROR, "Unable to load this PDF.").showAndWait();
             return;
+        }
+        if (saveProgress) {
+            dataStore.updateReadingProgress(currentUser.getUsername(), book.getId(), 1, pages.size());
         }
 
         // Retrieve saved bookmark for the user and book
@@ -660,6 +946,7 @@ public class App extends Application {
             
             if (saveProgress) {
                 dataStore.saveBookmark(currentUser.getUsername(), book.getId(), pageNum);
+                dataStore.updateReadingProgress(currentUser.getUsername(), book.getId(), pageNum, pages.size());
             }
             
             return reader.getNode();
@@ -761,6 +1048,7 @@ public class App extends Application {
         if (saveProgress) {
             int finalPage = pagination.getCurrentPageIndex() + 1;
             dataStore.saveBookmark(currentUser.getUsername(), book.getId(), finalPage);
+            dataStore.updateReadingProgress(currentUser.getUsername(), book.getId(), finalPage, pages.size());
             saveSession("Reader", book.getId());
         }
     }
@@ -1053,6 +1341,9 @@ public class App extends Application {
     private BorderPane buildLibrarianDashboard() {
         Label title = new Label("Librarian Dashboard");
         title.getStyleClass().add("section-title");
+        Label subtitle = new Label("Review submissions, upload formatted books, process requests, and monitor borrowing.");
+        subtitle.getStyleClass().add("muted-text");
+        VBox titleBlock = new VBox(2, title, subtitle);
 
         TableView<Book> pendingTable = buildPendingTable();
         VBox approvalActions = buildApprovalActions(pendingTable);
@@ -1064,6 +1355,9 @@ public class App extends Application {
 
         TableView<User> usersTable = buildUsersTable();
         VBox userActions = buildUserActions(usersTable);
+
+        TableView<BookRequest> requestTable = buildBookRequestsTable();
+        VBox requestActions = buildBookRequestActions(requestTable);
 
         TableView<Book> records = buildAllBorrowedBooksTable();
         TextField searchRecords = new TextField();
@@ -1079,18 +1373,20 @@ public class App extends Application {
         });
 
         VBox p1 = card("Pending Submissions", pendingTableWithTip, approvalActions);
-        VBox p2 = card("Manage All Users", usersTable, userActions);
-        VBox p3 = card("Borrowed Books Record", searchRecords, records);
+        VBox p2 = buildLibrarianUploadForm();
+        VBox p3 = card("Manage All Users", usersTable, userActions);
+        VBox p4 = card("New Book Requests", requestTable, requestActions);
+        VBox p5 = card("Borrowed Books Record", searchRecords, records);
 
-        VBox body = new VBox(12, p1, p2, p3);
+        VBox body = new VBox(12, p1, p2, p3, p4, p5);
         body.setPadding(new Insets(0, 20, 20, 20));
 
         ScrollPane scroll = new ScrollPane(body);
         scroll.setFitToWidth(true);
 
         BorderPane pane = new BorderPane(scroll);
-        pane.setTop(title);
-        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        pane.setTop(titleBlock);
+        BorderPane.setMargin(titleBlock, new Insets(20, 20, 8, 20));
         return pane;
     }
 
@@ -1157,6 +1453,111 @@ public class App extends Application {
         return new VBox(8, top, rejectionReason, new HBox(8, approve, reject), msg);
     }
 
+    private VBox buildLibrarianUploadForm() {
+        TextField title = new TextField();
+        title.setPromptText("Required title");
+        TextField author = new TextField();
+        author.setPromptText("Required author name(s)");
+        TextArea description = new TextArea();
+        description.setPromptText("Required description / summary");
+        description.setPrefRowCount(3);
+        TextField filePath = new TextField();
+        filePath.setEditable(false);
+        filePath.setPromptText("Required PDF file");
+        TextField coverPath = new TextField();
+        coverPath.setEditable(false);
+        coverPath.setPromptText("Optional PNG/JPG cover");
+
+        FlowPane genrePane = new FlowPane(8, 8);
+        List<CheckBox> genreChecks = new ArrayList<>();
+        for (String genre : dataStore.getGenreOptions()) {
+            CheckBox cb = new CheckBox(genre);
+            cb.getStyleClass().add("chip-check");
+            genreChecks.add(cb);
+            genrePane.getChildren().add(cb);
+        }
+
+        Button pickPdf = new Button("Choose PDF");
+        pickPdf.getStyleClass().add("secondary-button");
+        pickPdf.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Book PDF");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) filePath.setText(file.getAbsolutePath());
+        });
+
+        Button pickCover = new Button("Choose Cover");
+        pickCover.getStyleClass().add("secondary-button");
+        pickCover.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Cover Image");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) {
+                String lower = file.getName().toLowerCase();
+                if (!(lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg"))) {
+                    new Alert(Alert.AlertType.ERROR, "Cover must be PNG/JPG/JPEG.").showAndWait();
+                    return;
+                }
+                if (file.length() > 3L * 1024 * 1024) {
+                    new Alert(Alert.AlertType.ERROR, "Cover image must be <= 3MB.").showAndWait();
+                    return;
+                }
+                coverPath.setText(file.getAbsolutePath());
+            }
+        });
+
+        Label msg = new Label();
+        Button upload = new Button("Upload & Publish");
+        upload.getStyleClass().add("primary-button");
+        upload.setOnAction(e -> {
+            List<String> genres = genreChecks.stream()
+                    .filter(CheckBox::isSelected)
+                    .map(CheckBox::getText)
+                    .collect(Collectors.toList());
+            String path = filePath.getText().trim();
+            if (!path.toLowerCase().endsWith(".pdf")) {
+                setMessage(msg, "Book file must be a PDF.", false);
+                return;
+            }
+            DataStore.ActionResult result = dataStore.addLibrarianBook(
+                    title.getText(),
+                    author.getText(),
+                    genres,
+                    description.getText(),
+                    path,
+                    coverPath.getText().trim(),
+                    currentUser.getUsername());
+            setMessage(msg, result.message(), result.success());
+            if (result.success()) {
+                title.clear();
+                author.clear();
+                description.clear();
+                filePath.clear();
+                coverPath.clear();
+                genreChecks.forEach(cb -> cb.setSelected(false));
+            }
+        });
+
+        GridPane form = formGrid();
+        int row = 0;
+        form.addRow(row++, formLabel("Title"), title);
+        form.addRow(row++, formLabel("Author Names"), author);
+        form.addRow(row++, formLabel("Genres"), genrePane);
+        form.addRow(row++, formLabel("Description"), description);
+        HBox fileRow = new HBox(8, filePath, pickPdf);
+        HBox.setHgrow(filePath, Priority.ALWAYS);
+        form.addRow(row++, formLabel("File Upload"), fileRow);
+        HBox coverRow = new HBox(8, coverPath, pickCover);
+        HBox.setHgrow(coverPath, Priority.ALWAYS);
+        form.addRow(row++, formLabel("Cover Upload"), coverRow);
+
+        Label note = new Label("Required format: Title, Author Names, Genre, Description, PDF File, optional Cover Upload.");
+        note.getStyleClass().add("muted-text");
+        return card("Upload Library Book", note, form, upload, msg);
+    }
+
     private TableView<User> buildUsersTable() {
         TableView<User> table = new TableView<>();
         table.setItems(dataStore.getAllUsers());
@@ -1199,6 +1600,63 @@ public class App extends Application {
         });
 
         return new VBox(8, new HBox(8, add, edit, toggle), msg);
+    }
+
+    private TableView<BookRequest> buildBookRequestsTable() {
+        TableView<BookRequest> table = new TableView<>();
+        table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
+        table.getColumns().addAll(
+                typedCol("Title", BookRequest::getTitle, 170),
+                typedCol("Author", BookRequest::getAuthor, 140),
+                typedCol("Genre", BookRequest::getGenre, 110),
+                typedCol("Requester", BookRequest::getRequesterUsername, 120),
+                typedCol("Priority", BookRequest::getPriorityDisplay, 95),
+                typedCol("Status", r -> r.getStatus().getDisplayName(), 100),
+                typedCol("Submitted", r -> formatDateTime(r.getSubmittedAt()), 140),
+                typedCol("Reason", BookRequest::getReason, 220)
+        );
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        table.setPlaceholder(new Label("No new book requests."));
+        return table;
+    }
+
+    private VBox buildBookRequestActions(TableView<BookRequest> table) {
+        Label msg = new Label();
+        TextArea note = new TextArea();
+        note.setPromptText("Librarian note or rejection reason...");
+        note.setPrefRowCount(2);
+
+        Button approve = new Button("Approve Request");
+        approve.getStyleClass().add("primary-button");
+        approve.setOnAction(e -> {
+            BookRequest request = table.getSelectionModel().getSelectedItem();
+            if (request == null) { setMessage(msg, "Select a request.", false); return; }
+            DataStore.ActionResult result = dataStore.approveBookRequest(request.getId(), note.getText());
+            setMessage(msg, result.message(), result.success());
+            table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
+        });
+
+        Button reject = new Button("Reject Request");
+        reject.getStyleClass().add("danger-button");
+        reject.setOnAction(e -> {
+            BookRequest request = table.getSelectionModel().getSelectedItem();
+            if (request == null) { setMessage(msg, "Select a request.", false); return; }
+            DataStore.ActionResult result = dataStore.rejectBookRequest(request.getId(), note.getText());
+            setMessage(msg, result.message(), result.success());
+            table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
+        });
+
+        Button priority = new Button("Toggle Urgent");
+        priority.getStyleClass().add("secondary-button");
+        priority.setOnAction(e -> {
+            BookRequest request = table.getSelectionModel().getSelectedItem();
+            if (request == null) { setMessage(msg, "Select a request.", false); return; }
+            DataStore.ActionResult result = dataStore.toggleBookRequestPriority(request.getId());
+            setMessage(msg, result.message(), result.success());
+            table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
+        });
+
+        return new VBox(8, note, new HBox(8, approve, reject, priority), msg);
     }
 
     private void showAddUserDialog(Label msg) {
@@ -1382,7 +1840,7 @@ public class App extends Application {
         TextField search = new TextField();
         search.setPromptText("Search notifications...");
         ComboBox<String> category = new ComboBox<>();
-        category.getItems().addAll("All", "Due Reminder", "Book Deletion", "Book Approval", "Book Rejection", "Submission", "Account", "General", "Borrowing");
+        category.getItems().addAll("All", "Due Reminder", "Book Deletion", "Book Approval", "Book Rejection", "Book Request", "Submission", "Account", "General", "Borrowing");
         category.getSelectionModel().selectFirst();
         ComboBox<String> showMode = new ComboBox<>();
         showMode.getItems().addAll("Active", "Archived", "All");
@@ -1405,11 +1863,17 @@ public class App extends Application {
             @Override
             protected void updateItem(Notification n, boolean empty) {
                 super.updateItem(n, empty);
-                if (empty || n == null) { setText(null); setGraphic(null); return; }
+                if (empty || n == null) { setText(null); setGraphic(null); setStyle(""); return; }
                 Label m = new Label((n.isRead() ? "" : "[UNREAD] ") + n.getMessage());
                 m.setWrapText(true);
                 Label meta = new Label(n.getCategory() + " | " + n.getUrgency() + " | " + formatDateTime(n.getTimestamp()));
                 meta.getStyleClass().add("muted-text");
+                if ("High".equalsIgnoreCase(n.getUrgency())) {
+                    setStyle("-fx-background-color: #fff0d9; -fx-border-color: #e5c879; -fx-border-width: 0 0 1 0;");
+                    m.getStyleClass().add("card-title");
+                } else {
+                    setStyle("");
+                }
                 setGraphic(new VBox(4, m, meta));
             }
         });
@@ -1546,6 +2010,124 @@ public class App extends Application {
         return c;
     }
 
+    private PieChart buildGenrePieChart(List<ReadingHistory> histories) {
+        PieChart chart = new PieChart();
+        refreshGenrePieChart(chart, histories);
+        chart.setTitle("Genres Read");
+        chart.setLegendVisible(false);
+        chart.setLabelsVisible(true);
+        chart.setPrefHeight(190);
+        chart.setMinHeight(160);
+        chart.getStyleClass().add("insight-chart");
+        return chart;
+    }
+
+    private void refreshGenrePieChart(PieChart chart, List<ReadingHistory> histories) {
+        Map<String, Long> byGenre = histories.stream()
+                .collect(Collectors.groupingBy(h -> safe(h.getGenre()).isBlank() ? "Unknown" : h.getGenre(), Collectors.counting()));
+        ObservableList<PieChart.Data> data = FXCollections.observableArrayList();
+        byGenre.forEach((genre, count) -> data.add(new PieChart.Data(genre, count)));
+        if (data.isEmpty()) data.add(new PieChart.Data("No history", 1));
+        chart.setData(data);
+    }
+
+    private BarChart<String, Number> buildProgressBarChart(List<ReadingHistory> histories) {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis(0, 100, 20);
+        BarChart<String, Number> chart = new BarChart<>(xAxis, yAxis);
+        chart.setTitle("Reading Progress");
+        chart.setLegendVisible(false);
+        chart.setAnimated(false);
+        chart.setPrefHeight(190);
+        chart.getStyleClass().add("insight-chart");
+        refreshProgressBarChart(chart, histories);
+        return chart;
+    }
+
+    private void refreshProgressBarChart(BarChart<String, Number> chart, List<ReadingHistory> histories) {
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        histories.stream()
+                .sorted(Comparator.comparing(ReadingHistory::getBorrowDate).reversed())
+                .limit(6)
+                .forEach(h -> series.getData().add(new XYChart.Data<>(shortLabel(h.getBookTitle()), h.getProgressPercent())));
+        if (series.getData().isEmpty()) {
+            series.getData().add(new XYChart.Data<>("No history", 0));
+        }
+        chart.getData().clear();
+        chart.getData().add(series);
+    }
+
+    private void exportReadingHistoryCsv(List<ReadingHistory> histories) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Export Reading History CSV");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
+        chooser.setInitialFileName("reading-history.csv");
+        File file = chooser.showSaveDialog(stage);
+        if (file == null) return;
+
+        StringBuilder csv = new StringBuilder("Book Title,Author,Genre,Borrow Date,Return Date,Duration Days,Progress Percent\n");
+        for (ReadingHistory h : histories) {
+            csv.append(csvCell(h.getBookTitle())).append(',')
+                    .append(csvCell(h.getAuthor())).append(',')
+                    .append(csvCell(h.getGenre())).append(',')
+                    .append(csvCell(formatDate(h.getBorrowDate()))).append(',')
+                    .append(csvCell(formatDate(h.getReturnDate()))).append(',')
+                    .append(h.getReadingDurationDays()).append(',')
+                    .append(h.getProgressPercent()).append('\n');
+        }
+        try {
+            Files.writeString(file.toPath(), csv.toString(), StandardCharsets.UTF_8);
+            new Alert(Alert.AlertType.INFORMATION, "Reading history exported to CSV.").showAndWait();
+        } catch (IOException ex) {
+            new Alert(Alert.AlertType.ERROR, "Unable to export CSV: " + ex.getMessage()).showAndWait();
+        }
+    }
+
+    private void exportReadingHistoryPdf(List<ReadingHistory> histories) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Export Reading History PDF");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+        chooser.setInitialFileName("reading-history.pdf");
+        File file = chooser.showSaveDialog(stage);
+        if (file == null) return;
+
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.beginText();
+                content.setFont(PDType1Font.HELVETICA_BOLD, 16);
+                content.newLineAtOffset(48, 740);
+                content.showText("Reading History - " + currentUser.getFullName());
+                content.setFont(PDType1Font.HELVETICA, 10);
+                content.newLineAtOffset(0, -24);
+                int rows = 0;
+                for (ReadingHistory h : histories) {
+                    if (rows >= 28) break;
+                    String line = shortLabel(h.getBookTitle(), 28) + " | " +
+                            shortLabel(h.getAuthor(), 18) + " | " +
+                            formatDate(h.getBorrowDate()) + " - " + formatDate(h.getReturnDate()) +
+                            " | " + h.getProgressPercent() + "%";
+                    content.showText(line.replaceAll("[^\\x20-\\x7E]", "?"));
+                    content.newLineAtOffset(0, -18);
+                    rows++;
+                }
+                content.endText();
+            }
+            document.save(file);
+            new Alert(Alert.AlertType.INFORMATION, "Reading history exported to PDF.").showAndWait();
+        } catch (IOException ex) {
+            new Alert(Alert.AlertType.ERROR, "Unable to export PDF: " + ex.getMessage()).showAndWait();
+        }
+    }
+
+    private <S, T> TableColumn<S, T> typedCol(String title, javafx.util.Callback<S, T> mapper, double width) {
+        TableColumn<S, T> c = new TableColumn<>(title);
+        c.setCellValueFactory(cd -> new SimpleObjectProperty<>(mapper.call(cd.getValue())));
+        c.setPrefWidth(width);
+        return c;
+    }
+
     private TableColumn<User, String> userCol(String title, javafx.util.Callback<User, String> mapper, double width) {
         TableColumn<User, String> c = new TableColumn<>(title);
         c.setCellValueFactory(cd -> new SimpleStringProperty(mapper.call(cd.getValue())));
@@ -1561,6 +2143,61 @@ public class App extends Application {
     private String formatDate(LocalDate d) { return d == null ? "-" : d.toString(); }
     private String formatDateTime(LocalDateTime d) { return d == null ? "-" : d.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")); }
     private String safe(String s) { return s == null ? "" : s; }
+
+    private String ratingSummary(String bookId) {
+        int count = dataStore.getReviewCount(bookId);
+        if (count == 0) return "No reviews";
+        return String.format(Locale.US, "%.1f/5 (%d)", dataStore.getAverageRating(bookId), count);
+    }
+
+    private String stars(int rating) {
+        int clamped = Math.max(1, Math.min(5, rating));
+        return "*".repeat(clamped) + "-".repeat(5 - clamped);
+    }
+
+    private String readingInsight(List<ReadingHistory> histories) {
+        if (histories == null || histories.isEmpty()) {
+            return "No reading history yet. Borrowed books will be tracked automatically.";
+        }
+        long completed = histories.stream().filter(h -> h.getReturnDate() != null).count();
+        double avgProgress = histories.stream().mapToInt(ReadingHistory::getProgressPercent).average().orElse(0.0);
+        String topGenre = histories.stream()
+                .collect(Collectors.groupingBy(ReadingHistory::getGenre, Collectors.counting()))
+                .entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse("n/a");
+        return String.format(Locale.US, "%d record(s), %d returned, average progress %.0f%%, most read genre: %s",
+                histories.size(), completed, avgProgress, topGenre);
+    }
+
+    private String readingBadges(List<ReadingHistory> histories) {
+        if (histories == null || histories.isEmpty()) return "Badge: First Borrow awaits";
+        long returned = histories.stream().filter(h -> h.getReturnDate() != null).count();
+        long highProgress = histories.stream().filter(h -> h.getProgressPercent() >= 80).count();
+        List<String> badges = new ArrayList<>();
+        badges.add("First Borrow");
+        if (returned >= 1) badges.add("First Return");
+        if (histories.size() >= 5) badges.add("5-Book Explorer");
+        if (histories.size() >= 10) badges.add("Read 10 books this semester");
+        if (highProgress >= 3) badges.add("Focused Reader");
+        return "Badges: " + String.join(" | ", badges);
+    }
+
+    private String csvCell(String value) {
+        String escaped = safe(value).replace("\"", "\"\"");
+        return "\"" + escaped + "\"";
+    }
+
+    private String shortLabel(String value) {
+        return shortLabel(value, 16);
+    }
+
+    private String shortLabel(String value, int max) {
+        String text = safe(value);
+        if (text.length() <= max) return text;
+        return text.substring(0, Math.max(1, max - 3)) + "...";
+    }
 
     private String passwordStrength(String password) {
         if (password == null || password.isBlank()) return "";

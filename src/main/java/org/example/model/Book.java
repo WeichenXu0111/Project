@@ -19,6 +19,7 @@ public class Book implements Serializable {
     private List<String> genres = new ArrayList<>();
     private String description;
     private String filePath;
+    private String coverPath;
     private LocalDate submittedDate;
     private LocalDate approvedDate;
     private LocalDate borrowedDate;
@@ -49,6 +50,7 @@ public class Book implements Serializable {
         setGenresInternal(genres);
         this.description = description;
         this.filePath = filePath;
+        this.coverPath = "";
         this.submittedDate = LocalDate.now();
         this.status = BookStatus.PENDING_APPROVAL;
     }
@@ -99,6 +101,10 @@ public class Book implements Serializable {
 
     public String getFilePath() {
         return filePath;
+    }
+
+    public String getCoverPath() {
+        return coverPath == null ? "" : coverPath;
     }
 
     public LocalDate getSubmittedDate() {
@@ -183,6 +189,10 @@ public class Book implements Serializable {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public void setCoverPath(String coverPath) {
+        this.coverPath = coverPath == null ? "" : coverPath.trim();
     }
 
     public void setGenres(List<String> newGenres) {

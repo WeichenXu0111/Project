@@ -4,8 +4,11 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import org.example.model.AuthorDraft;
 import org.example.model.Book;
+import org.example.model.BookRequest;
+import org.example.model.BookReview;
 import org.example.model.BookStatus;
 import org.example.model.Notification;
+import org.example.model.ReadingHistory;
 import org.example.model.Role;
 import org.example.model.User;
 import org.example.pdf.PDFHighlightManager;
@@ -54,6 +57,9 @@ public class DataStore {
     private final Map<String, List<String>> textHighlights = new HashMap<>();
     // New: Interactive PDF highlights for text selection
     private final Map<String, Map<String, List<PDFHighlightManager.HighlightData>>> interactiveHighlights = new HashMap<>();
+    private final List<ReadingHistory> readingHistories = new ArrayList<>();
+    private final List<BookReview> bookReviews = new ArrayList<>();
+    private final List<BookRequest> bookRequests = new ArrayList<>();
     private SessionState sessionState;
 
     private final ObservableList<Book> availableBooks = FXCollections.observableArrayList();
@@ -105,6 +111,9 @@ public class DataStore {
             Object textHighlightObj = null;
             Object interactiveHighlightObj = null;
             Object sessionObj = null;
+            Object readingHistoryObj = null;
+            Object reviewObj = null;
+            Object requestObj = null;
             try {
                 draftObj = input.readObject();
                 notificationObj = input.readObject();
@@ -113,6 +122,9 @@ public class DataStore {
                 textHighlightObj = input.readObject();
                 interactiveHighlightObj = input.readObject();
                 sessionObj = input.readObject();
+                readingHistoryObj = input.readObject();
+                reviewObj = input.readObject();
+                requestObj = input.readObject();
             } catch (EOFException ignored) {
                 // backward compatibility
             }
@@ -125,6 +137,9 @@ public class DataStore {
             bookHighlights.clear();
             textHighlights.clear();
             interactiveHighlights.clear();
+            readingHistories.clear();
+            bookReviews.clear();
+            bookRequests.clear();
 
             if (userObj instanceof List<?> userList) {
                 userList.stream().filter(User.class::isInstance).map(User.class::cast).forEach(users::add);
@@ -173,12 +188,30 @@ public class DataStore {
                 for (Map.Entry<?, ?> entry : map.entrySet()) {
                     if (entry.getKey() instanceof String key && entry.getValue() instanceof Map<?, ?> innerMap) {
                         Map<String, List<PDFHighlightManager.HighlightData>> userHighlights = new HashMap<>();
+                        for (Map.Entry<?, ?> innerEntry : innerMap.entrySet()) {
+                            if (innerEntry.getKey() instanceof String pageKey && innerEntry.getValue() instanceof List<?> list) {
+                                List<PDFHighlightManager.HighlightData> highlights = list.stream()
+                                        .filter(PDFHighlightManager.HighlightData.class::isInstance)
+                                        .map(PDFHighlightManager.HighlightData.class::cast)
+                                        .collect(Collectors.toCollection(ArrayList::new));
+                                userHighlights.put(pageKey, highlights);
+                            }
+                        }
                         interactiveHighlights.put(key, userHighlights);
                     }
                 }
             }
             if (sessionObj instanceof SessionState state) {
                 sessionState = state;
+            }
+            if (readingHistoryObj instanceof List<?> list) {
+                list.stream().filter(ReadingHistory.class::isInstance).map(ReadingHistory.class::cast).forEach(readingHistories::add);
+            }
+            if (reviewObj instanceof List<?> list) {
+                list.stream().filter(BookReview.class::isInstance).map(BookReview.class::cast).forEach(bookReviews::add);
+            }
+            if (requestObj instanceof List<?> list) {
+                list.stream().filter(BookRequest.class::isInstance).map(BookRequest.class::cast).forEach(bookRequests::add);
             }
 
             if (books.isEmpty()) {
@@ -204,6 +237,9 @@ public class DataStore {
                 output.writeObject(new HashMap<>(textHighlights));
                 output.writeObject(new HashMap<>(interactiveHighlights));
                 output.writeObject(sessionState);
+                output.writeObject(new ArrayList<>(readingHistories));
+                output.writeObject(new ArrayList<>(bookReviews));
+                output.writeObject(new ArrayList<>(bookRequests));
             }
         } catch (IOException ignored) {
         }
@@ -309,7 +345,8 @@ public class DataStore {
     public List<Notification> getNotificationsForUser(String username) {
         return notifications.stream()
                 .filter(n -> n.getRecipientUsername().equals(username))
-                .sorted(Comparator.comparing(Notification::getTimestamp).reversed())
+                .sorted(Comparator.comparing((Notification n) -> !"High".equalsIgnoreCase(n.getUrgency()))
+                        .thenComparing(Notification::getTimestamp, Comparator.reverseOrder()))
                 .collect(Collectors.toList());
     }
 
@@ -405,6 +442,171 @@ public class DataStore {
                 .collect(Collectors.toList());
     }
 
+    public List<ReadingHistory> getReadingHistory(String username) {
+        return readingHistories.stream()
+                .filter(history -> history.getUsername().equals(username))
+                .sorted(Comparator.comparing(ReadingHistory::getBorrowDate).reversed())
+                .collect(Collectors.toList());
+    }
+
+    public boolean hasBorrowedBook(String username, String bookId) {
+        boolean currentBorrow = books.stream()
+                .anyMatch(book -> book.getId().equals(bookId) && username.equals(book.getBorrowedBy()));
+        boolean historicalBorrow = readingHistories.stream()
+                .anyMatch(history -> history.getUsername().equals(username) && history.getBookId().equals(bookId));
+        return currentBorrow || historicalBorrow;
+    }
+
+    public void updateReadingProgress(String username, String bookId, int page, int totalPages) {
+        if (username == null || bookId == null) return;
+        ReadingHistory history = findActiveOrLatestHistory(username, bookId).orElseGet(() -> {
+            Optional<Book> bookOpt = findBook(bookId);
+            if (bookOpt.isEmpty()) return null;
+            ReadingHistory created = new ReadingHistory(username, bookOpt.get());
+            readingHistories.add(created);
+            return created;
+        });
+        if (history == null) return;
+        history.updateProgress(page, totalPages);
+        save();
+    }
+
+    public List<BookReview> getReviewsForBook(String bookId) {
+        return bookReviews.stream()
+                .filter(review -> review.getBookId().equals(bookId))
+                .sorted(Comparator.comparing(BookReview::getSubmittedAt).reversed())
+                .collect(Collectors.toList());
+    }
+
+    public ActionResult markReviewHelpful(String reviewId, String username) {
+        Optional<BookReview> reviewOpt = bookReviews.stream()
+                .filter(review -> review.getId().equals(reviewId))
+                .findFirst();
+        if (reviewOpt.isEmpty()) return new ActionResult(false, "Review not found.");
+        BookReview review = reviewOpt.get();
+        if (review.getUsername().equals(username)) return new ActionResult(false, "You cannot mark your own review helpful.");
+        if (!review.markHelpful(username)) return new ActionResult(false, "You already marked this review helpful.");
+        save();
+        return new ActionResult(true, "Marked as helpful.");
+    }
+
+    public List<BookReview> getReviewsByUser(String username) {
+        return bookReviews.stream()
+                .filter(review -> review.getUsername().equals(username))
+                .sorted(Comparator.comparing(BookReview::getSubmittedAt).reversed())
+                .collect(Collectors.toList());
+    }
+
+    public double getAverageRating(String bookId) {
+        return bookReviews.stream()
+                .filter(review -> review.getBookId().equals(bookId))
+                .mapToInt(BookReview::getRating)
+                .average()
+                .orElse(0.0);
+    }
+
+    public int getReviewCount(String bookId) {
+        return (int) bookReviews.stream().filter(review -> review.getBookId().equals(bookId)).count();
+    }
+
+    public ActionResult submitReview(String username, String bookId, int rating, String reviewText, boolean anonymous) {
+        if (username == null || username.isBlank()) return new ActionResult(false, "User is required.");
+        if (bookId == null || bookId.isBlank()) return new ActionResult(false, "Book is required.");
+        if (rating < 1 || rating > 5) return new ActionResult(false, "Rating must be between 1 and 5.");
+        if (reviewText == null || reviewText.isBlank()) return new ActionResult(false, "Review text is required.");
+        if (!hasBorrowedBook(username, bookId)) {
+            return new ActionResult(false, "You can review only books you have borrowed.");
+        }
+
+        String reviewerName = findUser(username).map(User::getFullName).orElse(username);
+        Optional<BookReview> existing = bookReviews.stream()
+                .filter(review -> review.getUsername().equals(username) && review.getBookId().equals(bookId))
+                .findFirst();
+        if (existing.isPresent()) {
+            existing.get().update(rating, reviewText, anonymous);
+        } else {
+            bookReviews.add(new BookReview(bookId, username, reviewerName, rating, reviewText, anonymous));
+        }
+        save();
+        return new ActionResult(true, existing.isPresent() ? "Review updated." : "Review submitted.");
+    }
+
+    public List<BookRequest> getBookRequestsByUser(String username) {
+        return bookRequests.stream()
+                .filter(request -> request.getRequesterUsername().equals(username))
+                .sorted(Comparator.comparing(BookRequest::getSubmittedAt).reversed())
+                .collect(Collectors.toList());
+    }
+
+    public List<BookRequest> getAllBookRequests() {
+        return bookRequests.stream()
+                .sorted(Comparator.comparing((BookRequest request) -> !request.isPriority())
+                        .thenComparing(BookRequest::getSubmittedAt, Comparator.reverseOrder()))
+                .collect(Collectors.toList());
+    }
+
+    public ActionResult requestNewBook(String username, String title, String author, String genre, String reason) {
+        if (username == null || username.isBlank()) return new ActionResult(false, "User is required.");
+        if (title == null || title.isBlank()) return new ActionResult(false, "Title is required.");
+        if (author == null || author.isBlank()) return new ActionResult(false, "Author is required.");
+        if (genre == null || genre.isBlank()) return new ActionResult(false, "Genre is required.");
+        if (reason == null || reason.isBlank()) return new ActionResult(false, "Reason is required.");
+
+        boolean alreadyInCatalog = books.stream().anyMatch(book ->
+                safeLower(book.getTitle()).equals(safeLower(title)) &&
+                        safeLower(book.getAuthorFullName()).equals(safeLower(author)));
+        if (alreadyInCatalog) return new ActionResult(false, "This book already exists in the catalog.");
+
+        boolean duplicatePending = bookRequests.stream().anyMatch(request ->
+                request.getStatus() == BookRequest.Status.PENDING &&
+                        safeLower(request.getTitle()).equals(safeLower(title)) &&
+                        safeLower(request.getAuthor()).equals(safeLower(author)));
+        if (duplicatePending) return new ActionResult(false, "A pending request for this book already exists.");
+
+        String requesterName = findUser(username).map(User::getFullName).orElse(username);
+        BookRequest request = new BookRequest(username, requesterName, title.trim(), author.trim(), genre.trim(), reason.trim());
+        bookRequests.add(request);
+        addNotificationToRole(Role.LIBRARIAN, "New book request: " + title.trim() + " by " + author.trim(), "Book Request", "High");
+        save();
+        return new ActionResult(true, "Request submitted for librarian review.");
+    }
+
+    public ActionResult approveBookRequest(String requestId, String note) {
+        Optional<BookRequest> requestOpt = findBookRequest(requestId);
+        if (requestOpt.isEmpty()) return new ActionResult(false, "Request not found.");
+        BookRequest request = requestOpt.get();
+        if (request.getStatus() != BookRequest.Status.PENDING) return new ActionResult(false, "Request is already processed.");
+        request.approve(note);
+        addNotification(request.getRequesterUsername(),
+                "Your requested book was approved and queued for upload: '" + request.getTitle() + "'.",
+                "Book Request", "High");
+        save();
+        return new ActionResult(true, "Request approved and requester notified.");
+    }
+
+    public ActionResult rejectBookRequest(String requestId, String note) {
+        Optional<BookRequest> requestOpt = findBookRequest(requestId);
+        if (requestOpt.isEmpty()) return new ActionResult(false, "Request not found.");
+        BookRequest request = requestOpt.get();
+        if (request.getStatus() != BookRequest.Status.PENDING) return new ActionResult(false, "Request is already processed.");
+        request.reject(note);
+        addNotification(request.getRequesterUsername(),
+                "Your requested book was rejected: '" + request.getTitle() + "'" +
+                        ((note == null || note.isBlank()) ? "." : ". Reason: " + note.trim()),
+                "Book Request", "Normal");
+        save();
+        return new ActionResult(true, "Request rejected and requester notified.");
+    }
+
+    public ActionResult toggleBookRequestPriority(String requestId) {
+        Optional<BookRequest> requestOpt = findBookRequest(requestId);
+        if (requestOpt.isEmpty()) return new ActionResult(false, "Request not found.");
+        BookRequest request = requestOpt.get();
+        request.setPriority(!request.isPriority());
+        save();
+        return new ActionResult(true, request.isPriority() ? "Request marked urgent." : "Request marked normal.");
+    }
+
     public AuthorDraft getDraft(String username) { return draftsMap.get(username); }
 
     public void saveDraft(String username, AuthorDraft draft) {
@@ -447,6 +649,33 @@ public class DataStore {
         save();
         refreshViews();
         return new ActionResult(true, "Book submitted successfully.");
+    }
+
+    public ActionResult addLibrarianBook(String title,
+                                         String authorFullName,
+                                         List<String> genres,
+                                         String description,
+                                         String filePath,
+                                         String coverPath,
+                                         String librarianUsername) {
+        if (title == null || title.isBlank()) return new ActionResult(false, "Title is required.");
+        if (authorFullName == null || authorFullName.isBlank()) return new ActionResult(false, "Author name is required.");
+        if (genres == null || genres.isEmpty()) return new ActionResult(false, "At least one genre is required.");
+        if (description == null || description.isBlank()) return new ActionResult(false, "Description is required.");
+        if (filePath == null || filePath.isBlank()) return new ActionResult(false, "Book PDF file is required.");
+
+        Book book = new Book(title.trim(),
+                librarianUsername == null || librarianUsername.isBlank() ? "librarian-upload" : librarianUsername.trim(),
+                authorFullName.trim(),
+                genres,
+                description.trim(),
+                filePath.trim());
+        book.setCoverPath(coverPath);
+        book.approve();
+        books.add(book);
+        save();
+        refreshViews();
+        return new ActionResult(true, "Book uploaded and published.");
     }
 
     public ActionResult updateBook(String bookId, String title, List<String> genres, String description) {
@@ -571,6 +800,7 @@ public class DataStore {
         if (durationDays != 14) {
             book.setCustomDueDate(LocalDate.now().plusDays(durationDays));
         }
+        readingHistories.add(new ReadingHistory(borrower, book));
         addNotification(borrower, "You borrowed '" + book.getTitle() + "'. Due on " + book.getDueDate(), "Borrowing", "Normal");
         save();
         refreshViews();
@@ -600,6 +830,7 @@ public class DataStore {
         if (book.getStatus() != BookStatus.BORROWED) return new ActionResult(false, "Book is not currently borrowed.");
         if (!username.equals(book.getBorrowedBy())) return new ActionResult(false, "You did not borrow this book.");
 
+        findActiveOrLatestHistory(username, bookId).ifPresent(history -> history.markReturned(LocalDate.now()));
         book.returnBook();
         addNotification(username, "You returned '" + book.getTitle() + "'.", "Borrowing", "Normal");
         save();
@@ -623,6 +854,9 @@ public class DataStore {
             if (book.getStatus() == BookStatus.BORROWED && book.getDueDate() != null && now.isAfter(book.getDueDate())) {
                 String borrower = book.getBorrowedBy();
                 String title = book.getTitle();
+                if (borrower != null) {
+                    findActiveOrLatestHistory(borrower, book.getId()).ifPresent(history -> history.markReturned(now));
+                }
                 book.returnBook();
                 if (borrower != null) {
                     addNotification(borrower, "Book auto-returned after due date: '" + title + "'.", "Due Reminder", "High");
@@ -655,6 +889,7 @@ public class DataStore {
     public void saveBookmark(String username, String bookId, int page) {
         if (username == null || bookId == null) return;
         bookBookmarks.put(username + "::" + bookId, Math.max(page, 1));
+        findActiveOrLatestHistory(username, bookId).ifPresent(history -> history.updateProgress(page, history.getTotalPages()));
         save();
     }
 
@@ -837,6 +1072,26 @@ public class DataStore {
 
     private Optional<Book> findBook(String id) {
         return books.stream().filter(book -> book.getId().equals(id)).findFirst();
+    }
+
+    private Optional<BookRequest> findBookRequest(String id) {
+        return bookRequests.stream().filter(request -> request.getId().equals(id)).findFirst();
+    }
+
+    private Optional<ReadingHistory> findActiveOrLatestHistory(String username, String bookId) {
+        Optional<ReadingHistory> active = readingHistories.stream()
+                .filter(history -> history.getUsername().equals(username)
+                        && history.getBookId().equals(bookId)
+                        && history.getReturnDate() == null)
+                .findFirst();
+        if (active.isPresent()) return active;
+        return readingHistories.stream()
+                .filter(history -> history.getUsername().equals(username) && history.getBookId().equals(bookId))
+                .max(Comparator.comparing(ReadingHistory::getBorrowDate));
+    }
+
+    private String safeLower(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
     }
 
     private boolean hasBorrowHistory(String bookId) {

@@ -231,7 +231,7 @@ public class InteractivePDFReader {
         float y = (float) Math.min(start.getY(), end.getY());
         float width = (float) Math.abs(end.getX() - start.getX());
         float height = (float) Math.abs(end.getY() - start.getY());
-        
+
         // Draw a blue rectangle for selection
         gc.setStroke(Color.color(0.0, 0.5, 1.0, 0.8)); // Blue border
         gc.setLineWidth(2);
