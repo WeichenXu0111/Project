@@ -45,6 +45,8 @@ import org.example.model.Role;
 import org.example.model.User;
 import org.example.pdf.InteractivePDFReader;
 import org.example.pdf.PDFHighlightManager;
+import org.example.service.RequestedBookDownloader;
+import org.example.service.SummaryService;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -1137,6 +1139,9 @@ public class App extends Application {
     private BorderPane buildAuthorDashboard() {
         Label title = new Label("Author Dashboard");
         title.getStyleClass().add("section-title");
+        Label subtitle = new Label("Publish books, generate summaries, monitor statistics, and respond to reader feedback.");
+        subtitle.getStyleClass().add("muted-text");
+        VBox titleBlock = new VBox(2, title, subtitle);
 
         VBox left = buildAuthorPublishForm();
         TableView<Book> table = buildAuthorSubmissionsTable();
@@ -1149,11 +1154,19 @@ public class App extends Application {
         HBox.setHgrow(right, Priority.ALWAYS);
 
         HBox bodyRow = new HBox(12, left, right);
-        bodyRow.setPadding(new Insets(0, 20, 20, 20));
+        bodyRow.setPadding(new Insets(14));
 
-        BorderPane pane = new BorderPane(bodyRow);
-        pane.setTop(title);
-        BorderPane.setMargin(title, new Insets(20, 20, 8, 20));
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabs.getTabs().addAll(
+                new Tab("Publish & Books", bodyRow),
+                new Tab("Stats", buildAuthorStatsScreen()),
+                new Tab("Reviews & Feedback", buildAuthorFeedbackScreen())
+        );
+
+        BorderPane pane = new BorderPane(tabs);
+        pane.setTop(titleBlock);
+        BorderPane.setMargin(titleBlock, new Insets(20, 20, 8, 20));
         return pane;
     }
 
@@ -1168,6 +1181,7 @@ public class App extends Application {
         filePath.setEditable(false);
         TextField coverPath = new TextField();
         coverPath.setEditable(false);
+        Label msg = new Label();
 
         FlowPane genrePane = new FlowPane(8, 8);
         List<CheckBox> genreChecks = new ArrayList<>();
@@ -1199,6 +1213,32 @@ public class App extends Application {
             }
         });
 
+        Button generateSummary = new Button("Generate Summary");
+        generateSummary.getStyleClass().add("secondary-button");
+        generateSummary.setOnAction(e -> {
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            summary.setText(SummaryService.generateSummary(title.getText(), currentUser.getFullName(), genres, filePath.getText()));
+            setMessage(msg, "Summary generated. You can edit it before submission.", true);
+        });
+
+        Button refineSummary = new Button("Refine Summary");
+        refineSummary.getStyleClass().add("secondary-button");
+        refineSummary.setOnAction(e -> {
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            summary.setText(SummaryService.refineSummary(summary.getText(), title.getText(), genres));
+            setMessage(msg, "Summary refined.", true);
+        });
+
+        Button finalizeSummary = new Button("Finalize Summary");
+        finalizeSummary.getStyleClass().add("secondary-button");
+        finalizeSummary.setOnAction(e -> {
+            if (summary.getText().trim().isEmpty()) {
+                setMessage(msg, "Generate or write a summary first.", false);
+                return;
+            }
+            setMessage(msg, "Summary finalized for submission.", true);
+        });
+
         AuthorDraft draft = dataStore.getDraft(currentUser.getUsername());
         if (draft != null) {
             title.setText(draft.getTitle());
@@ -1207,7 +1247,6 @@ public class App extends Application {
             genreChecks.forEach(cb -> cb.setSelected(draft.getGenres().contains(cb.getText())));
         }
 
-        Label msg = new Label();
         Button saveDraft = new Button("Save Draft");
         saveDraft.setOnAction(e -> {
             AuthorDraft d = new AuthorDraft();
@@ -1255,7 +1294,7 @@ public class App extends Application {
         g.addRow(r++, formLabel("Book File"), fileRow);
         g.addRow(r++, formLabel("Cover Image"), coverRow);
 
-        VBox box = new VBox(10, t, g, new HBox(8, saveDraft, submit), msg);
+        VBox box = new VBox(10, t, g, new HBox(8, generateSummary, refineSummary, finalizeSummary), new HBox(8, saveDraft, submit), msg);
         box.setPadding(new Insets(14));
         box.getStyleClass().add("card");
         box.setPrefWidth(460);
@@ -1321,6 +1360,149 @@ public class App extends Application {
         return new VBox(8, new HBox(8, read, edit, delete), msg);
     }
 
+    private VBox buildAuthorStatsScreen() {
+        List<Book> books = dataStore.getBooksByAuthorSnapshot(currentUser.getUsername());
+        List<BookReview> reviews = dataStore.getReviewsForAuthor(currentUser.getUsername());
+        long published = books.stream()
+                .filter(book -> book.getStatus() == BookStatus.APPROVED_AVAILABLE || book.getStatus() == BookStatus.BORROWED)
+                .count();
+
+        HBox stats = new HBox(10,
+                statCard("Published Books", String.valueOf(published)),
+                statCard("Reads", String.valueOf(dataStore.getReadCountForAuthor(currentUser.getUsername()))),
+                statCard("Average Rating", reviews.isEmpty() ? "n/a" : String.format(Locale.US, "%.1f/5", dataStore.getAverageRatingForAuthor(currentUser.getUsername()))),
+                statCard("Borrow Count", String.valueOf(dataStore.getBorrowCountForAuthor(currentUser.getUsername()))),
+                statCard("Reviews", String.valueOf(reviews.size()))
+        );
+
+        TableView<Book> table = new TableView<>(FXCollections.observableArrayList(books));
+        table.getColumns().addAll(
+                col("Title", Book::getTitle, 180),
+                col("Status", b -> b.getStatus().getDisplayName(), 130),
+                col("Borrow Count", Book::getBorrowCount, 110),
+                col("Reads", b -> dataStore.getReadCountForBook(b.getId()), 90),
+                col("Avg Rating", b -> ratingSummary(b.getId()), 120),
+                col("Reviews", b -> dataStore.getReviewCount(b.getId()), 90)
+        );
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+
+        HBox charts = new HBox(12, buildAuthorBorrowBarChart(books), buildAuthorRatingPieChart(reviews));
+        HBox.setHgrow(charts.getChildren().get(0), Priority.ALWAYS);
+        HBox.setHgrow(charts.getChildren().get(1), Priority.ALWAYS);
+        charts.getStyleClass().add("chart-row");
+
+        VBox box = new VBox(12, stats, charts, table);
+        box.setPadding(new Insets(14));
+        VBox.setVgrow(table, Priority.ALWAYS);
+        return box;
+    }
+
+    private VBox buildAuthorFeedbackScreen() {
+        List<Book> authoredBooks = dataStore.getBooksByAuthorSnapshot(currentUser.getUsername());
+        Map<String, Book> booksById = authoredBooks.stream().collect(Collectors.toMap(Book::getId, b -> b, (a, b) -> a));
+        ObservableList<BookReview> source = FXCollections.observableArrayList(dataStore.getReviewsForAuthor(currentUser.getUsername()));
+        FilteredList<BookReview> filtered = new FilteredList<>(source, r -> true);
+
+        ComboBox<String> bookFilter = new ComboBox<>();
+        bookFilter.getItems().add("All Books");
+        authoredBooks.stream().map(Book::getTitle).sorted().forEach(bookFilter.getItems()::add);
+        bookFilter.getSelectionModel().selectFirst();
+        CheckBox flaggedOnly = new CheckBox("Flagged only");
+
+        Runnable apply = () -> filtered.setPredicate(review -> {
+            if (review == null) return false;
+            if (flaggedOnly.isSelected() && !review.isFlagged()) return false;
+            String selected = bookFilter.getValue();
+            if (selected != null && !"All Books".equals(selected)) {
+                Book book = booksById.get(review.getBookId());
+                return book != null && selected.equals(book.getTitle());
+            }
+            return true;
+        });
+        bookFilter.valueProperty().addListener((a, b, c) -> apply.run());
+        flaggedOnly.selectedProperty().addListener((a, b, c) -> apply.run());
+
+        ListView<BookReview> reviews = new ListView<>(filtered);
+        reviews.setPlaceholder(new Label("Reviews for your books will appear here."));
+        reviews.setCellFactory(v -> new ListCell<>() {
+            @Override
+            protected void updateItem(BookReview review, boolean empty) {
+                super.updateItem(review, empty);
+                if (empty || review == null) { setText(null); setGraphic(null); return; }
+                Book book = booksById.get(review.getBookId());
+                Label title = new Label(shortLabel(book == null ? "Unknown book" : book.getTitle(), 42) + " | " + stars(review.getRating()));
+                title.getStyleClass().add("card-title");
+                Label body = new Label(review.getDisplayName() + ": " + review.getReviewText());
+                body.setWrapText(true);
+                Label meta = new Label(formatDateTime(review.getSubmittedAt()) + " | Helpful: " + review.getHelpfulCount() + " | " + review.getFlagDisplay());
+                meta.getStyleClass().add("muted-text");
+                VBox cell = new VBox(4, title, body, meta);
+                if (!review.getAuthorReply().isBlank()) {
+                    Label reply = new Label("Author reply: " + review.getAuthorReply());
+                    reply.setWrapText(true);
+                    reply.getStyleClass().add("muted-text");
+                    cell.getChildren().add(reply);
+                }
+                if (review.isFlagged()) {
+                    Label flag = new Label("Flag reason: " + review.getFlagReason());
+                    flag.setWrapText(true);
+                    flag.getStyleClass().add("error-text");
+                    cell.getChildren().add(flag);
+                }
+                setGraphic(cell);
+            }
+        });
+
+        TextArea reply = new TextArea();
+        reply.setPromptText("Write a reply to the selected review...");
+        reply.setPrefRowCount(3);
+        TextArea flagReason = new TextArea();
+        flagReason.setPromptText("Reason for flagging inappropriate feedback...");
+        flagReason.setPrefRowCount(2);
+        Label msg = new Label();
+
+        Runnable refresh = () -> {
+            source.setAll(dataStore.getReviewsForAuthor(currentUser.getUsername()));
+            apply.run();
+        };
+
+        Button sendReply = new Button("Send Reply");
+        sendReply.getStyleClass().add("primary-button");
+        sendReply.setOnAction(e -> {
+            BookReview selected = reviews.getSelectionModel().getSelectedItem();
+            if (selected == null) { setMessage(msg, "Select a review first.", false); return; }
+            DataStore.ActionResult result = dataStore.replyToReview(selected.getId(), currentUser.getUsername(), reply.getText());
+            setMessage(msg, result.message(), result.success());
+            if (result.success()) {
+                reply.clear();
+                refresh.run();
+            }
+        });
+
+        Button flag = new Button("Flag Review");
+        flag.getStyleClass().add("danger-button");
+        flag.setOnAction(e -> {
+            BookReview selected = reviews.getSelectionModel().getSelectedItem();
+            if (selected == null) { setMessage(msg, "Select a review first.", false); return; }
+            DataStore.ActionResult result = dataStore.flagReview(selected.getId(), currentUser.getUsername(), flagReason.getText());
+            setMessage(msg, result.message(), result.success());
+            if (result.success()) {
+                flagReason.clear();
+                refresh.run();
+            }
+        });
+
+        HBox filters = new HBox(8, bookFilter, flaggedOnly);
+        filters.setAlignment(Pos.CENTER_LEFT);
+        VBox actions = new VBox(8, reply, sendReply, flagReason, flag, msg);
+        actions.setPrefWidth(430);
+        HBox body = new HBox(12, reviews, actions);
+        HBox.setHgrow(reviews, Priority.ALWAYS);
+        VBox box = new VBox(10, filters, body);
+        box.setPadding(new Insets(14));
+        return box;
+    }
+
     private void showAuthorEditDialog(Book book, Label msg) {
         Dialog<ButtonType> d = new Dialog<>();
         d.setTitle("Edit Book");
@@ -1347,6 +1529,8 @@ public class App extends Application {
 
         TableView<Book> pendingTable = buildPendingTable();
         VBox approvalActions = buildApprovalActions(pendingTable);
+        TableView<Book> publishedTable = buildPublishedBooksTable();
+        VBox publishedActions = buildPublishedBookActions(publishedTable);
 
         // Add multi-selection tip for librarian
         Label multiSelectTip = new Label("Tip: Hold Ctrl or Shift to select multiple books.");
@@ -1372,13 +1556,14 @@ public class App extends Application {
             }
         });
 
+        VBox p0 = card("Manage Published Books", publishedTable, publishedActions);
         VBox p1 = card("Pending Submissions", pendingTableWithTip, approvalActions);
         VBox p2 = buildLibrarianUploadForm();
         VBox p3 = card("Manage All Users", usersTable, userActions);
         VBox p4 = card("New Book Requests", requestTable, requestActions);
         VBox p5 = card("Borrowed Books Record", searchRecords, records);
 
-        VBox body = new VBox(12, p1, p2, p3, p4, p5);
+        VBox body = new VBox(12, p0, p1, p2, p3, p4, p5);
         body.setPadding(new Insets(0, 20, 20, 20));
 
         ScrollPane scroll = new ScrollPane(body);
@@ -1388,6 +1573,163 @@ public class App extends Application {
         pane.setTop(titleBlock);
         BorderPane.setMargin(titleBlock, new Insets(20, 20, 8, 20));
         return pane;
+    }
+
+    private TableView<Book> buildPublishedBooksTable() {
+        TableView<Book> table = new TableView<>();
+        table.setItems(dataStore.getPublishedBooks());
+        table.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        table.getColumns().addAll(
+                col("Title", Book::getTitle, 180),
+                col("Author", Book::getAuthorFullName, 150),
+                col("Genre", Book::getGenre, 130),
+                col("Rating", b -> ratingSummary(b.getId()), 120),
+                col("Borrow Count", Book::getBorrowCount, 110),
+                col("Status", b -> b.getStatus().getDisplayName(), 120)
+        );
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
+        table.setPlaceholder(new Label("No published books."));
+        return table;
+    }
+
+    private VBox buildPublishedBookActions(TableView<Book> table) {
+        TextField search = new TextField();
+        search.setPromptText("Search published books...");
+        ComboBox<String> genre = new ComboBox<>();
+        genre.getItems().add("All");
+        genre.getItems().addAll(dataStore.getGenreOptions());
+        genre.getSelectionModel().selectFirst();
+        Label msg = new Label();
+
+        Runnable apply = () -> {
+            String q = search.getText() == null ? "" : search.getText().toLowerCase().trim();
+            String selectedGenre = genre.getValue();
+            table.setItems(FXCollections.observableArrayList(dataStore.getPublishedBooks().stream()
+                    .filter(book -> q.isBlank()
+                            || safe(book.getTitle()).toLowerCase().contains(q)
+                            || safe(book.getAuthorFullName()).toLowerCase().contains(q)
+                            || safe(book.getGenre()).toLowerCase().contains(q))
+                    .filter(book -> "All".equals(selectedGenre)
+                            || book.getGenres().stream().anyMatch(g -> g.equalsIgnoreCase(selectedGenre)))
+                    .collect(Collectors.toList())));
+        };
+        search.textProperty().addListener((a, b, c) -> apply.run());
+        genre.valueProperty().addListener((a, b, c) -> apply.run());
+
+        Button read = new Button("Read Selected");
+        read.getStyleClass().add("secondary-button");
+        read.setOnAction(e -> {
+            Book book = table.getSelectionModel().getSelectedItem();
+            if (book == null) { setMessage(msg, "Select a published book.", false); return; }
+            showBookReader(book, false);
+        });
+
+        Button edit = new Button("Edit Details");
+        edit.getStyleClass().add("secondary-button");
+        edit.setOnAction(e -> {
+            Book book = table.getSelectionModel().getSelectedItem();
+            if (book == null) { setMessage(msg, "Select a published book.", false); return; }
+            showLibrarianEditBookDialog(book, msg);
+        });
+
+        Button delete = new Button("Delete Available");
+        delete.getStyleClass().add("danger-button");
+        delete.setOnAction(e -> {
+            List<Book> selected = new ArrayList<>(table.getSelectionModel().getSelectedItems());
+            if (selected.isEmpty()) { setMessage(msg, "Select one or more books.", false); return; }
+            if (new Alert(Alert.AlertType.CONFIRMATION, "Delete " + selected.size() + " available published book(s)?")
+                    .showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            int success = 0;
+            List<String> failed = new ArrayList<>();
+            for (Book book : selected) {
+                DataStore.ActionResult result = dataStore.deletePublishedBookByLibrarian(book.getId());
+                if (result.success()) success++;
+                else failed.add(book.getTitle());
+            }
+            setMessage(msg, "Deleted " + success + " book(s). Failed: " + failed.size(), failed.isEmpty());
+            table.setItems(dataStore.getPublishedBooks());
+        });
+
+        HBox filters = new HBox(8, search, genre);
+        HBox.setHgrow(search, Priority.ALWAYS);
+        return new VBox(8, filters, new HBox(8, read, edit, delete), msg);
+    }
+
+    private void showLibrarianEditBookDialog(Book book, Label msg) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Edit Published Book");
+        TextField title = new TextField(book.getTitle());
+        TextField author = new TextField(book.getAuthorFullName());
+        TextArea description = new TextArea(book.getDescription());
+        description.setPrefRowCount(4);
+        TextField filePath = new TextField(safe(book.getFilePath()));
+        TextField coverPath = new TextField(safe(book.getCoverPath()));
+        filePath.setEditable(false);
+        coverPath.setEditable(false);
+
+        FlowPane genrePane = new FlowPane(8, 8);
+        List<CheckBox> genreChecks = new ArrayList<>();
+        for (String option : dataStore.getGenreOptions()) {
+            CheckBox cb = new CheckBox(option);
+            cb.setSelected(book.getGenres().stream().anyMatch(g -> g.equalsIgnoreCase(option)));
+            genreChecks.add(cb);
+            genrePane.getChildren().add(cb);
+        }
+
+        Button choosePdf = new Button("Choose PDF");
+        choosePdf.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Replacement PDF");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) filePath.setText(file.getAbsolutePath());
+        });
+
+        Button chooseCover = new Button("Choose Cover");
+        chooseCover.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Cover Image");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) coverPath.setText(file.getAbsolutePath());
+        });
+
+        Button generate = new Button("Generate Description");
+        generate.setOnAction(e -> {
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            description.setText(SummaryService.generateSummary(title.getText(), author.getText(), genres, filePath.getText()));
+        });
+
+        GridPane grid = formGrid();
+        int row = 0;
+        grid.addRow(row++, formLabel("Title"), title);
+        grid.addRow(row++, formLabel("Author Names"), author);
+        grid.addRow(row++, formLabel("Genres"), genrePane);
+        grid.addRow(row++, formLabel("Description"), description);
+        HBox fileRow = new HBox(8, filePath, choosePdf);
+        HBox.setHgrow(filePath, Priority.ALWAYS);
+        grid.addRow(row++, formLabel("Book File"), fileRow);
+        HBox coverRow = new HBox(8, coverPath, chooseCover);
+        HBox.setHgrow(coverPath, Priority.ALWAYS);
+        grid.addRow(row++, formLabel("Cover"), coverRow);
+
+        dialog.getDialogPane().setContent(new VBox(10, grid, generate));
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        if (dialog.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            if (new Alert(Alert.AlertType.CONFIRMATION, "Save changes to this published book?")
+                    .showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            DataStore.ActionResult result = dataStore.updatePublishedBookByLibrarian(
+                    book.getId(),
+                    title.getText(),
+                    author.getText(),
+                    genres,
+                    description.getText(),
+                    filePath.getText(),
+                    coverPath.getText());
+            setMessage(msg, result.message(), result.success());
+            root.setCenter(buildLibrarianDashboard());
+        }
     }
 
     private TableView<Book> buildPendingTable() {
@@ -1509,6 +1851,17 @@ public class App extends Application {
         });
 
         Label msg = new Label();
+        Button generateDescription = new Button("Generate Description");
+        generateDescription.getStyleClass().add("secondary-button");
+        generateDescription.setOnAction(e -> {
+            List<String> genres = genreChecks.stream()
+                    .filter(CheckBox::isSelected)
+                    .map(CheckBox::getText)
+                    .collect(Collectors.toList());
+            description.setText(SummaryService.generateSummary(title.getText(), author.getText(), genres, filePath.getText()));
+            setMessage(msg, "Description generated. Review and edit before upload.", true);
+        });
+
         Button upload = new Button("Upload & Publish");
         upload.getStyleClass().add("primary-button");
         upload.setOnAction(e -> {
@@ -1521,6 +1874,8 @@ public class App extends Application {
                 setMessage(msg, "Book file must be a PDF.", false);
                 return;
             }
+            if (new Alert(Alert.AlertType.CONFIRMATION, "Upload and publish this book now?")
+                    .showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
             DataStore.ActionResult result = dataStore.addLibrarianBook(
                     title.getText(),
                     author.getText(),
@@ -1555,7 +1910,7 @@ public class App extends Application {
 
         Label note = new Label("Required format: Title, Author Names, Genre, Description, PDF File, optional Cover Upload.");
         note.getStyleClass().add("muted-text");
-        return card("Upload Library Book", note, form, upload, msg);
+        return card("Upload Library Book", note, form, new HBox(8, generateDescription, upload), msg);
     }
 
     private TableView<User> buildUsersTable() {
@@ -1613,6 +1968,7 @@ public class App extends Application {
                 typedCol("Priority", BookRequest::getPriorityDisplay, 95),
                 typedCol("Status", r -> r.getStatus().getDisplayName(), 100),
                 typedCol("Submitted", r -> formatDateTime(r.getSubmittedAt()), 140),
+                typedCol("Downloaded File", r -> shortLabel(r.getDownloadedFilePath(), 24), 140),
                 typedCol("Reason", BookRequest::getReason, 220)
         );
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
@@ -1622,6 +1978,8 @@ public class App extends Application {
 
     private VBox buildBookRequestActions(TableView<BookRequest> table) {
         Label msg = new Label();
+        TextField sourceUrl = new TextField();
+        sourceUrl.setPromptText("Direct PDF/TXT URL or webpage URL to crawl...");
         TextArea note = new TextArea();
         note.setPromptText("Librarian note or rejection reason...");
         note.setPrefRowCount(2);
@@ -1646,6 +2004,33 @@ public class App extends Application {
             table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
         });
 
+        Button download = new Button("Download Source");
+        download.getStyleClass().add("secondary-button");
+        download.setOnAction(e -> {
+            BookRequest request = table.getSelectionModel().getSelectedItem();
+            if (request == null) { setMessage(msg, "Select a request.", false); return; }
+            RequestedBookDownloader.DownloadResult downloadResult = RequestedBookDownloader.download(sourceUrl.getText(), request);
+            if (!downloadResult.success()) {
+                setMessage(msg, downloadResult.message(), false);
+                return;
+            }
+            DataStore.ActionResult mark = dataStore.markBookRequestDownloaded(
+                    request.getId(),
+                    downloadResult.filePath().toString(),
+                    note.getText().isBlank() ? downloadResult.message() : note.getText());
+            setMessage(msg, mark.success() ? downloadResult.message() + " " + mark.message() : mark.message(), mark.success());
+            table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
+        });
+
+        Button upload = new Button("Upload Fulfilled Book");
+        upload.getStyleClass().add("primary-button");
+        upload.setOnAction(e -> {
+            BookRequest request = table.getSelectionModel().getSelectedItem();
+            if (request == null) { setMessage(msg, "Select a request.", false); return; }
+            showRequestUploadDialog(request, msg);
+            table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
+        });
+
         Button priority = new Button("Toggle Urgent");
         priority.getStyleClass().add("secondary-button");
         priority.setOnAction(e -> {
@@ -1656,7 +2041,91 @@ public class App extends Application {
             table.setItems(FXCollections.observableArrayList(dataStore.getAllBookRequests()));
         });
 
-        return new VBox(8, note, new HBox(8, approve, reject, priority), msg);
+        HBox.setHgrow(sourceUrl, Priority.ALWAYS);
+        return new VBox(8, sourceUrl, note, new HBox(8, approve, reject, priority), new HBox(8, download, upload), msg);
+    }
+
+    private void showRequestUploadDialog(BookRequest request, Label msg) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Upload Requested Book");
+        TextField title = new TextField(request.getTitle());
+        TextField author = new TextField(request.getAuthor());
+        TextArea description = new TextArea();
+        description.setPrefRowCount(4);
+        TextField filePath = new TextField(request.getDownloadedFilePath());
+        filePath.setEditable(false);
+        TextField coverPath = new TextField();
+        coverPath.setEditable(false);
+        TextField fulfillmentNote = new TextField(request.getLibrarianNote());
+
+        FlowPane genrePane = new FlowPane(8, 8);
+        List<CheckBox> genreChecks = new ArrayList<>();
+        for (String option : dataStore.getGenreOptions()) {
+            CheckBox cb = new CheckBox(option);
+            cb.setSelected(option.equalsIgnoreCase(request.getGenre()));
+            genreChecks.add(cb);
+            genrePane.getChildren().add(cb);
+        }
+
+        Button choosePdf = new Button("Choose PDF");
+        choosePdf.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Fulfilled Book PDF");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) filePath.setText(file.getAbsolutePath());
+        });
+
+        Button chooseCover = new Button("Choose Cover");
+        chooseCover.setOnAction(e -> {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Choose Cover Image");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"));
+            File file = chooser.showOpenDialog(stage);
+            if (file != null) coverPath.setText(file.getAbsolutePath());
+        });
+
+        Button generate = new Button("Generate Description");
+        generate.setOnAction(e -> {
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            String generated = SummaryService.generateSummary(title.getText(), author.getText(), genres, filePath.getText());
+            description.setText(generated + "\n\nRequest reason: " + request.getReason());
+        });
+        generate.fire();
+
+        GridPane grid = formGrid();
+        int row = 0;
+        grid.addRow(row++, formLabel("Title"), title);
+        grid.addRow(row++, formLabel("Author Names"), author);
+        grid.addRow(row++, formLabel("Genres"), genrePane);
+        grid.addRow(row++, formLabel("Description"), description);
+        HBox fileRow = new HBox(8, filePath, choosePdf);
+        HBox.setHgrow(filePath, Priority.ALWAYS);
+        grid.addRow(row++, formLabel("Book File"), fileRow);
+        HBox coverRow = new HBox(8, coverPath, chooseCover);
+        HBox.setHgrow(coverPath, Priority.ALWAYS);
+        grid.addRow(row++, formLabel("Cover"), coverRow);
+        grid.addRow(row, formLabel("Fulfillment Note"), fulfillmentNote);
+
+        dialog.getDialogPane().setContent(new VBox(10, grid, generate));
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        if (dialog.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            if (new Alert(Alert.AlertType.CONFIRMATION, "Upload this requested book and notify the requester?")
+                    .showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
+            List<String> genres = genreChecks.stream().filter(CheckBox::isSelected).map(CheckBox::getText).collect(Collectors.toList());
+            DataStore.ActionResult result = dataStore.uploadBookForRequest(
+                    request.getId(),
+                    title.getText(),
+                    author.getText(),
+                    genres,
+                    description.getText(),
+                    filePath.getText(),
+                    coverPath.getText(),
+                    currentUser.getUsername(),
+                    fulfillmentNote.getText());
+            setMessage(msg, result.message(), result.success());
+            root.setCenter(buildLibrarianDashboard());
+        }
     }
 
     private void showAddUserDialog(Label msg) {
@@ -2008,6 +2477,38 @@ public class App extends Application {
         c.setCellValueFactory(cd -> new SimpleObjectProperty<>(mapper.call(cd.getValue())));
         c.setPrefWidth(width);
         return c;
+    }
+
+    private BarChart<String, Number> buildAuthorBorrowBarChart(List<Book> books) {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        BarChart<String, Number> chart = new BarChart<>(xAxis, yAxis);
+        chart.setTitle("Borrow Counts");
+        chart.setLegendVisible(false);
+        chart.setAnimated(false);
+        chart.setPrefHeight(220);
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        books.stream()
+                .sorted(Comparator.comparingInt(Book::getBorrowCount).reversed())
+                .limit(8)
+                .forEach(book -> series.getData().add(new XYChart.Data<>(shortLabel(book.getTitle()), book.getBorrowCount())));
+        if (series.getData().isEmpty()) series.getData().add(new XYChart.Data<>("No books", 0));
+        chart.getData().add(series);
+        return chart;
+    }
+
+    private PieChart buildAuthorRatingPieChart(List<BookReview> reviews) {
+        PieChart chart = new PieChart();
+        Map<String, Long> ratings = reviews.stream()
+                .collect(Collectors.groupingBy(review -> review.getRating() + " star", TreeMap::new, Collectors.counting()));
+        ObservableList<PieChart.Data> data = FXCollections.observableArrayList();
+        ratings.forEach((rating, count) -> data.add(new PieChart.Data(rating, count)));
+        if (data.isEmpty()) data.add(new PieChart.Data("No ratings", 1));
+        chart.setData(data);
+        chart.setTitle("Rating Distribution");
+        chart.setLegendVisible(false);
+        chart.setPrefHeight(220);
+        return chart;
     }
 
     private PieChart buildGenrePieChart(List<ReadingHistory> histories) {

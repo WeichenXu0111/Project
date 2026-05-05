@@ -11,7 +11,9 @@ public class BookRequest implements Serializable {
 
     public enum Status {
         PENDING("Pending"),
+        DOWNLOADED("Downloaded"),
         APPROVED("Approved"),
+        FULFILLED("Fulfilled"),
         REJECTED("Rejected");
 
         private final String displayName;
@@ -37,6 +39,8 @@ public class BookRequest implements Serializable {
     private String librarianNote;
     private LocalDateTime processedAt;
     private boolean priority;
+    private String downloadedFilePath;
+    private String uploadedBookId;
 
     public BookRequest(String requesterUsername, String requesterName, String title, String author, String genre, String reason) {
         this.id = UUID.randomUUID().toString();
@@ -50,6 +54,8 @@ public class BookRequest implements Serializable {
         this.status = Status.PENDING;
         this.librarianNote = "";
         this.priority = false;
+        this.downloadedFilePath = "";
+        this.uploadedBookId = "";
     }
 
     public String getId() { return id; }
@@ -64,6 +70,8 @@ public class BookRequest implements Serializable {
     public String getLibrarianNote() { return librarianNote; }
     public LocalDateTime getProcessedAt() { return processedAt; }
     public boolean isPriority() { return priority; }
+    public String getDownloadedFilePath() { return downloadedFilePath == null ? "" : downloadedFilePath; }
+    public String getUploadedBookId() { return uploadedBookId == null ? "" : uploadedBookId; }
 
     public String getPriorityDisplay() {
         return priority ? "Urgent" : "Normal";
@@ -76,6 +84,20 @@ public class BookRequest implements Serializable {
     public void approve(String note) {
         this.status = Status.APPROVED;
         this.librarianNote = note == null ? "" : note.trim();
+        this.processedAt = LocalDateTime.now();
+    }
+
+    public void markDownloaded(String filePath, String note) {
+        this.status = Status.DOWNLOADED;
+        this.downloadedFilePath = filePath == null ? "" : filePath.trim();
+        this.librarianNote = note == null || note.isBlank() ? this.librarianNote : note.trim();
+        this.processedAt = LocalDateTime.now();
+    }
+
+    public void fulfill(String bookId, String note) {
+        this.status = Status.FULFILLED;
+        this.uploadedBookId = bookId == null ? "" : bookId.trim();
+        this.librarianNote = note == null || note.isBlank() ? this.librarianNote : note.trim();
         this.processedAt = LocalDateTime.now();
     }
 

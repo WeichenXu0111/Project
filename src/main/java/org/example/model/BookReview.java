@@ -20,6 +20,10 @@ public class BookReview implements Serializable {
     private boolean anonymous;
     private LocalDateTime submittedAt;
     private Set<String> helpfulVoters = new HashSet<>();
+    private String authorReply = "";
+    private LocalDateTime repliedAt;
+    private boolean flagged;
+    private String flagReason = "";
 
     public BookReview(String bookId, String username, String reviewerName, int rating, String reviewText, boolean anonymous) {
         this.id = UUID.randomUUID().toString();
@@ -38,6 +42,10 @@ public class BookReview implements Serializable {
     public boolean isAnonymous() { return anonymous; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public int getHelpfulCount() { return helpfulVoters == null ? 0 : helpfulVoters.size(); }
+    public String getAuthorReply() { return authorReply == null ? "" : authorReply; }
+    public LocalDateTime getRepliedAt() { return repliedAt; }
+    public boolean isFlagged() { return flagged; }
+    public String getFlagReason() { return flagReason == null ? "" : flagReason; }
 
     public String getDisplayName() {
         return anonymous ? "Anonymous reader" : reviewerName;
@@ -57,5 +65,19 @@ public class BookReview implements Serializable {
         if (username == null || username.isBlank()) return false;
         if (helpfulVoters == null) helpfulVoters = new HashSet<>();
         return helpfulVoters.add(username);
+    }
+
+    public void reply(String replyText) {
+        this.authorReply = replyText == null ? "" : replyText.trim();
+        this.repliedAt = LocalDateTime.now();
+    }
+
+    public void flag(String reason) {
+        this.flagged = true;
+        this.flagReason = reason == null ? "" : reason.trim();
+    }
+
+    public String getFlagDisplay() {
+        return flagged ? "Flagged" : "OK";
     }
 }

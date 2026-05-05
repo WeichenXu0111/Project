@@ -386,6 +386,7 @@ public class DataStore {
     public ObservableList<Book> getAvailableBooks() { refreshViews(); return availableBooks; }
     public ObservableList<Book> getCatalogBooks() { refreshViews(); return catalogBooks; }
     public ObservableList<Book> getApprovedBooks() { refreshViews(); return approvedBooks; }
+    public ObservableList<Book> getPublishedBooks() { refreshViews(); return approvedBooks; }
     public ObservableList<Book> getRejectedBooks() { refreshViews(); return rejectedBooks; }
     public ObservableList<Book> getPendingBooks() { refreshViews(); return pendingBooks; }
 
@@ -393,6 +394,13 @@ public class DataStore {
         refreshViews();
         authorBooks.setAll(books.stream().filter(book -> book.getAuthorUsername().equals(username)).collect(Collectors.toList()));
         return authorBooks;
+    }
+
+    public List<Book> getBooksByAuthorSnapshot(String username) {
+        refreshViews();
+        return books.stream()
+                .filter(book -> book.getAuthorUsername().equals(username))
+                .collect(Collectors.toList());
     }
 
     public ObservableList<Book> getBorrowedBooksBy(String username) {
@@ -409,6 +417,45 @@ public class DataStore {
         refreshViews();
         allBorrowedBooksView.setAll(books.stream().filter(book -> book.getStatus() == BookStatus.BORROWED).collect(Collectors.toList()));
         return allBorrowedBooksView;
+    }
+
+    public int getReadCountForBook(String bookId) {
+        return (int) readingHistories.stream()
+                .filter(history -> history.getBookId().equals(bookId))
+                .count();
+    }
+
+    public int getReadCountForAuthor(String authorUsername) {
+        Set<String> bookIds = getBookIdsByAuthor(authorUsername);
+        return (int) readingHistories.stream()
+                .filter(history -> bookIds.contains(history.getBookId()))
+                .count();
+    }
+
+    public int getBorrowCountForAuthor(String authorUsername) {
+        return books.stream()
+                .filter(book -> book.getAuthorUsername().equals(authorUsername))
+                .mapToInt(Book::getBorrowCount)
+                .sum();
+    }
+
+    public List<BookReview> getReviewsForAuthor(String authorUsername) {
+        Set<String> bookIds = getBookIdsByAuthor(authorUsername);
+        return bookReviews.stream()
+                .filter(review -> bookIds.contains(review.getBookId()))
+                .sorted(Comparator.comparing(BookReview::getSubmittedAt).reversed())
+                .collect(Collectors.toList());
+    }
+
+    public int getReviewCountForAuthor(String authorUsername) {
+        return getReviewsForAuthor(authorUsername).size();
+    }
+
+    public double getAverageRatingForAuthor(String authorUsername) {
+        return getReviewsForAuthor(authorUsername).stream()
+                .mapToInt(BookReview::getRating)
+                .average()
+                .orElse(0.0);
     }
 
     public ObservableList<User> getAllUsers() { refreshViews(); return usersView; }
@@ -529,6 +576,52 @@ public class DataStore {
         }
         save();
         return new ActionResult(true, existing.isPresent() ? "Review updated." : "Review submitted.");
+    }
+
+    public ActionResult replyToReview(String reviewId, String authorUsername, String replyText) {
+        if (replyText == null || replyText.isBlank()) return new ActionResult(false, "Reply text is required.");
+        Optional<BookReview> reviewOpt = bookReviews.stream()
+                .filter(review -> review.getId().equals(reviewId))
+                .findFirst();
+        if (reviewOpt.isEmpty()) return new ActionResult(false, "Review not found.");
+
+        BookReview review = reviewOpt.get();
+        Optional<Book> bookOpt = findBook(review.getBookId());
+        if (bookOpt.isEmpty()) return new ActionResult(false, "Book not found.");
+        Book book = bookOpt.get();
+        if (!book.getAuthorUsername().equals(authorUsername)) {
+            return new ActionResult(false, "You can reply only to reviews on your books.");
+        }
+
+        review.reply(replyText);
+        addNotification(review.getUsername(),
+                "Author replied to your review of '" + book.getTitle() + "'.",
+                "Review Reply", "Normal");
+        save();
+        return new ActionResult(true, "Reply sent to reviewer.");
+    }
+
+    public ActionResult flagReview(String reviewId, String authorUsername, String reason) {
+        if (reason == null || reason.isBlank()) return new ActionResult(false, "Flag reason is required.");
+        Optional<BookReview> reviewOpt = bookReviews.stream()
+                .filter(review -> review.getId().equals(reviewId))
+                .findFirst();
+        if (reviewOpt.isEmpty()) return new ActionResult(false, "Review not found.");
+
+        BookReview review = reviewOpt.get();
+        Optional<Book> bookOpt = findBook(review.getBookId());
+        if (bookOpt.isEmpty()) return new ActionResult(false, "Book not found.");
+        Book book = bookOpt.get();
+        if (!book.getAuthorUsername().equals(authorUsername)) {
+            return new ActionResult(false, "You can flag only reviews on your books.");
+        }
+
+        review.flag(reason);
+        addNotificationToRole(Role.LIBRARIAN,
+                "Review flagged by author for '" + book.getTitle() + "': " + reason.trim(),
+                "Review Flag", "High");
+        save();
+        return new ActionResult(true, "Review flagged for librarian attention.");
     }
 
     public List<BookRequest> getBookRequestsByUser(String username) {
@@ -663,6 +756,7 @@ public class DataStore {
         if (genres == null || genres.isEmpty()) return new ActionResult(false, "At least one genre is required.");
         if (description == null || description.isBlank()) return new ActionResult(false, "Description is required.");
         if (filePath == null || filePath.isBlank()) return new ActionResult(false, "Book PDF file is required.");
+        if (!filePath.trim().toLowerCase().endsWith(".pdf")) return new ActionResult(false, "Book file must be a PDF.");
 
         Book book = new Book(title.trim(),
                 librarianUsername == null || librarianUsername.isBlank() ? "librarian-upload" : librarianUsername.trim(),
@@ -678,6 +772,57 @@ public class DataStore {
         return new ActionResult(true, "Book uploaded and published.");
     }
 
+    public ActionResult uploadBookForRequest(String requestId,
+                                             String title,
+                                             String authorFullName,
+                                             List<String> genres,
+                                             String description,
+                                             String filePath,
+                                             String coverPath,
+                                             String librarianUsername,
+                                             String note) {
+        Optional<BookRequest> requestOpt = findBookRequest(requestId);
+        if (requestOpt.isEmpty()) return new ActionResult(false, "Request not found.");
+        BookRequest request = requestOpt.get();
+        if (request.getStatus() == BookRequest.Status.REJECTED) return new ActionResult(false, "Rejected requests cannot be fulfilled.");
+        if (request.getStatus() == BookRequest.Status.FULFILLED) return new ActionResult(false, "Request is already fulfilled.");
+        if (title == null || title.isBlank()) return new ActionResult(false, "Title is required.");
+        if (authorFullName == null || authorFullName.isBlank()) return new ActionResult(false, "Author name is required.");
+        if (genres == null || genres.isEmpty()) return new ActionResult(false, "At least one genre is required.");
+        if (description == null || description.isBlank()) return new ActionResult(false, "Description is required.");
+        if (filePath == null || filePath.isBlank()) return new ActionResult(false, "Book PDF file is required.");
+        if (!filePath.trim().toLowerCase().endsWith(".pdf")) return new ActionResult(false, "Book file must be a PDF.");
+
+        Book book = new Book(title.trim(),
+                librarianUsername == null || librarianUsername.isBlank() ? "librarian-upload" : librarianUsername.trim(),
+                authorFullName.trim(),
+                genres,
+                description.trim(),
+                filePath.trim());
+        book.setCoverPath(coverPath);
+        book.approve();
+        books.add(book);
+        request.fulfill(book.getId(), note);
+        addNotification(request.getRequesterUsername(),
+                "Your requested book is now uploaded and available: '" + book.getTitle() + "'.",
+                "Book Request", "High");
+        save();
+        refreshViews();
+        return new ActionResult(true, "Requested book uploaded and requester notified.");
+    }
+
+    public ActionResult markBookRequestDownloaded(String requestId, String filePath, String note) {
+        Optional<BookRequest> requestOpt = findBookRequest(requestId);
+        if (requestOpt.isEmpty()) return new ActionResult(false, "Request not found.");
+        BookRequest request = requestOpt.get();
+        if (request.getStatus() == BookRequest.Status.REJECTED) return new ActionResult(false, "Rejected requests cannot be downloaded.");
+        if (request.getStatus() == BookRequest.Status.FULFILLED) return new ActionResult(false, "Request is already fulfilled.");
+        if (filePath == null || filePath.isBlank()) return new ActionResult(false, "Downloaded file path is required.");
+        request.markDownloaded(filePath, note);
+        save();
+        return new ActionResult(true, "Request marked as downloaded.");
+    }
+
     public ActionResult updateBook(String bookId, String title, List<String> genres, String description) {
         Optional<Book> bookOpt = findBook(bookId);
         if (bookOpt.isEmpty()) return new ActionResult(false, "Book not found.");
@@ -690,6 +835,57 @@ public class DataStore {
         save();
         refreshViews();
         return new ActionResult(true, "Book updated successfully.");
+    }
+
+    public ActionResult updatePublishedBookByLibrarian(String bookId,
+                                                       String title,
+                                                       String authorFullName,
+                                                       List<String> genres,
+                                                       String description,
+                                                       String filePath,
+                                                       String coverPath) {
+        Optional<Book> bookOpt = findBook(bookId);
+        if (bookOpt.isEmpty()) return new ActionResult(false, "Book not found.");
+        Book book = bookOpt.get();
+        if (book.getStatus() != BookStatus.APPROVED_AVAILABLE && book.getStatus() != BookStatus.BORROWED) {
+            return new ActionResult(false, "Only published books can be managed here.");
+        }
+        if (title == null || title.isBlank()) return new ActionResult(false, "Title is required.");
+        if (authorFullName == null || authorFullName.isBlank()) return new ActionResult(false, "Author name is required.");
+        if (genres == null || genres.isEmpty()) return new ActionResult(false, "At least one genre is required.");
+        if (description == null || description.isBlank()) return new ActionResult(false, "Description is required.");
+
+        book.setTitle(title.trim());
+        book.setAuthorFullName(authorFullName.trim());
+        book.setGenres(genres);
+        book.setDescription(description.trim());
+        if (filePath != null && !filePath.isBlank()) book.setFilePath(filePath.trim());
+        if (coverPath != null) book.setCoverPath(coverPath);
+        addNotification(book.getAuthorUsername(),
+                "Librarian updated published book details: '" + book.getTitle() + "'.",
+                "Book Update", "Normal");
+        save();
+        refreshViews();
+        return new ActionResult(true, "Published book updated.");
+    }
+
+    public ActionResult deletePublishedBookByLibrarian(String bookId) {
+        Optional<Book> bookOpt = findBook(bookId);
+        if (bookOpt.isEmpty()) return new ActionResult(false, "Book not found.");
+        Book book = bookOpt.get();
+        if (book.getStatus() == BookStatus.BORROWED) {
+            return new ActionResult(false, "Cannot delete a book while it is borrowed.");
+        }
+        if (book.getStatus() != BookStatus.APPROVED_AVAILABLE) {
+            return new ActionResult(false, "Only available published books can be deleted here.");
+        }
+        books.remove(book);
+        addNotification(book.getAuthorUsername(),
+                "Librarian removed published book: '" + book.getTitle() + "'.",
+                "Book Deletion", "High");
+        save();
+        refreshViews();
+        return new ActionResult(true, "Published book deleted.");
     }
 
     public ActionResult deleteBook(String bookId, String requesterUsername) {
@@ -1096,6 +1292,13 @@ public class DataStore {
 
     private boolean hasBorrowHistory(String bookId) {
         return books.stream().anyMatch(b -> b.getId().equals(bookId) && b.getBorrowCount() > 0);
+    }
+
+    private Set<String> getBookIdsByAuthor(String authorUsername) {
+        return books.stream()
+                .filter(book -> book.getAuthorUsername().equals(authorUsername))
+                .map(Book::getId)
+                .collect(Collectors.toSet());
     }
 
     private void notifyBorrowersBookDeleted(Book book) {

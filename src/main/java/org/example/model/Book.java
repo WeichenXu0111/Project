@@ -187,8 +187,16 @@ public class Book implements Serializable {
         this.title = title;
     }
 
+    public void setAuthorFullName(String authorFullName) {
+        this.authorFullName = authorFullName;
+    }
+
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public void setFilePath(String filePath) {
+        this.filePath = filePath;
     }
 
     public void setCoverPath(String coverPath) {
