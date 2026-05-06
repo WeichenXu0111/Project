@@ -2,6 +2,7 @@ package org.example.model;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 public class User implements Serializable {
     @Serial
@@ -16,6 +17,7 @@ public class User implements Serializable {
     private String employeeId;
     private String avatarPath;
     private boolean active = true;
+    private LocalDateTime lastLogin;
 
     public User(String username,
                 String fullName,
@@ -66,6 +68,10 @@ public class User implements Serializable {
         return avatarPath;
     }
 
+    public LocalDateTime getLastLogin() {
+        return lastLogin;
+    }
+
     public void setFullName(String fullName) {
         this.fullName = fullName;
     }
@@ -96,5 +102,9 @@ public class User implements Serializable {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public void markLogin() {
+        this.lastLogin = LocalDateTime.now();
     }
 }

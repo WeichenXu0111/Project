@@ -32,4 +32,20 @@ class SummaryServiceTest {
         assertFalse(refined.isBlank());
         assertTrue(refined.contains("concise catalog description"));
     }
+
+    @Test
+    void generateSummarySupportsDifferentStyles() {
+        String shortSummary = SummaryService.generateSummary("Algorithms", "A. Author", List.of("Computer Science"), "", "Short");
+        String detailedSummary = SummaryService.generateSummary("Algorithms", "A. Author", List.of("Computer Science"), "", "Detailed");
+
+        assertTrue(detailedSummary.length() > shortSummary.length());
+        assertTrue(detailedSummary.contains("detailed version"));
+    }
+
+    @Test
+    void analyzeSentimentClassifiesSimpleFeedback() {
+        assertTrue(SummaryService.analyzeSentiment("Excellent and helpful book").equals("Positive"));
+        assertTrue(SummaryService.analyzeSentiment("Confusing and terrible structure").equals("Negative"));
+        assertTrue(SummaryService.analyzeSentiment("It covers the topic").equals("Neutral"));
+    }
 }

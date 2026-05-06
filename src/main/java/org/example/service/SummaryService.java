@@ -19,6 +19,10 @@ public final class SummaryService {
     private SummaryService() { }
 
     public static String generateSummary(String title, String author, List<String> genres, String filePath) {
+        return generateSummary(title, author, genres, filePath, "Medium");
+    }
+
+    public static String generateSummary(String title, String author, List<String> genres, String filePath, String style) {
         String sourceText = extractSourceText(filePath);
         if (sourceText.isBlank()) {
             sourceText = String.join(" ",
@@ -31,13 +35,22 @@ public final class SummaryService {
         String genreText = genres == null || genres.isEmpty() ? "the selected subject area" : String.join(", ", genres);
         String keyText = keywords.isEmpty() ? "core concepts, examples, and practical takeaways" : String.join(", ", keywords);
 
-        return String.format(Locale.US,
+        String medium = String.format(Locale.US,
                 "%s by %s is a %s book focused on %s. The generated summary highlights the main ideas, likely learning outcomes, and practical value for library readers. Readers can expect concise coverage of %s, with enough context to decide whether the book matches their study or research needs.",
                 blankAs(title, "This book"),
                 blankAs(author, "the listed author"),
                 genreText,
                 keyText,
                 keyText);
+        String normalizedStyle = safe(style).toLowerCase(Locale.ROOT);
+        if (normalizedStyle.startsWith("short")) {
+            return String.format(Locale.US, "%s by %s introduces %s for readers interested in %s.",
+                    blankAs(title, "This book"), blankAs(author, "the listed author"), keyText, genreText);
+        }
+        if (normalizedStyle.startsWith("detail")) {
+            return medium + " This detailed version adds catalog-oriented context: the work can support coursework, project preparation, and independent study by connecting the topic to examples, methods, and vocabulary that readers can apply after borrowing the book.";
+        }
+        return medium;
     }
 
     public static String refineSummary(String currentSummary, String title, List<String> genres) {
@@ -47,6 +60,17 @@ public final class SummaryService {
         String firstSentence = base.split("(?<=[.!?])\\s+", 2)[0];
         String genreText = genres == null || genres.isEmpty() ? "its topic" : String.join(", ", genres);
         return firstSentence + " It has been refined into a concise catalog description for " + genreText + " readers.";
+    }
+
+    public static String analyzeSentiment(String text) {
+        String lower = safe(text).toLowerCase(Locale.ROOT);
+        Set<String> positive = Set.of("good", "great", "excellent", "helpful", "useful", "clear", "love", "best", "amazing", "positive", "recommend");
+        Set<String> negative = Set.of("bad", "poor", "confusing", "boring", "wrong", "hate", "terrible", "negative", "unclear", "useless", "difficult");
+        long pos = positive.stream().filter(lower::contains).count();
+        long neg = negative.stream().filter(lower::contains).count();
+        if (pos > neg) return "Positive";
+        if (neg > pos) return "Negative";
+        return "Neutral";
     }
 
     private static String extractSourceText(String filePath) {

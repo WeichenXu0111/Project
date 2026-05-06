@@ -60,6 +60,7 @@ public class DataStore {
     private final List<ReadingHistory> readingHistories = new ArrayList<>();
     private final List<BookReview> bookReviews = new ArrayList<>();
     private final List<BookRequest> bookRequests = new ArrayList<>();
+    private final Map<String, List<String>> bookVersionHistory = new HashMap<>();
     private SessionState sessionState;
 
     private final ObservableList<Book> availableBooks = FXCollections.observableArrayList();
@@ -114,6 +115,7 @@ public class DataStore {
             Object readingHistoryObj = null;
             Object reviewObj = null;
             Object requestObj = null;
+            Object versionHistoryObj = null;
             try {
                 draftObj = input.readObject();
                 notificationObj = input.readObject();
@@ -125,6 +127,7 @@ public class DataStore {
                 readingHistoryObj = input.readObject();
                 reviewObj = input.readObject();
                 requestObj = input.readObject();
+                versionHistoryObj = input.readObject();
             } catch (EOFException ignored) {
                 // backward compatibility
             }
@@ -140,6 +143,7 @@ public class DataStore {
             readingHistories.clear();
             bookReviews.clear();
             bookRequests.clear();
+            bookVersionHistory.clear();
 
             if (userObj instanceof List<?> userList) {
                 userList.stream().filter(User.class::isInstance).map(User.class::cast).forEach(users::add);
@@ -213,6 +217,17 @@ public class DataStore {
             if (requestObj instanceof List<?> list) {
                 list.stream().filter(BookRequest.class::isInstance).map(BookRequest.class::cast).forEach(bookRequests::add);
             }
+            if (versionHistoryObj instanceof Map<?, ?> map) {
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (entry.getKey() instanceof String key && entry.getValue() instanceof List<?> values) {
+                        List<String> history = values.stream()
+                                .filter(String.class::isInstance)
+                                .map(String.class::cast)
+                                .collect(Collectors.toCollection(ArrayList::new));
+                        bookVersionHistory.put(key, history);
+                    }
+                }
+            }
 
             if (books.isEmpty()) {
                 seedDefaultBooks();
@@ -240,6 +255,7 @@ public class DataStore {
                 output.writeObject(new ArrayList<>(readingHistories));
                 output.writeObject(new ArrayList<>(bookReviews));
                 output.writeObject(new ArrayList<>(bookRequests));
+                output.writeObject(new HashMap<>(bookVersionHistory));
             }
         } catch (IOException ignored) {
         }
@@ -290,7 +306,9 @@ public class DataStore {
         if (!PasswordUtil.verifyPassword(password, user.getPasswordSalt(), user.getPasswordHash())) {
             return null;
         }
+        user.markLogin();
         checkAutoReturns();
+        save();
         return user;
     }
 
@@ -419,6 +437,25 @@ public class DataStore {
         return allBorrowedBooksView;
     }
 
+    public List<ReadingHistory> getAllReadingHistories() {
+        checkAutoReturns();
+        return readingHistories.stream()
+                .sorted(Comparator.comparing(ReadingHistory::getBorrowDate).reversed())
+                .collect(Collectors.toList());
+    }
+
+    public int getCurrentBorrowedCountForUser(String username) {
+        return (int) books.stream()
+                .filter(book -> username != null && username.equals(book.getBorrowedBy()))
+                .count();
+    }
+
+    public int getTotalReadCountForUser(String username) {
+        return (int) readingHistories.stream()
+                .filter(history -> username != null && username.equals(history.getUsername()))
+                .count();
+    }
+
     public int getReadCountForBook(String bookId) {
         return (int) readingHistories.stream()
                 .filter(history -> history.getBookId().equals(bookId))
@@ -456,6 +493,14 @@ public class DataStore {
                 .mapToInt(BookReview::getRating)
                 .average()
                 .orElse(0.0);
+    }
+
+    public List<ReadingHistory> getReadingHistoriesForAuthor(String authorUsername) {
+        Set<String> bookIds = getBookIdsByAuthor(authorUsername);
+        return readingHistories.stream()
+                .filter(history -> bookIds.contains(history.getBookId()))
+                .sorted(Comparator.comparing(ReadingHistory::getBorrowDate).reversed())
+                .collect(Collectors.toList());
     }
 
     public ObservableList<User> getAllUsers() { refreshViews(); return usersView; }
@@ -638,6 +683,52 @@ public class DataStore {
                 .collect(Collectors.toList());
     }
 
+    public Map<String, Long> getBookRequestStatusCounts() {
+        return bookRequests.stream()
+                .collect(Collectors.groupingBy(request -> request.getStatus().getDisplayName(), Collectors.counting()));
+    }
+
+    public Map<String, Long> getBookRequestGenreCounts() {
+        return bookRequests.stream()
+                .collect(Collectors.groupingBy(request -> safeBlank(request.getGenre(), "Unknown"), Collectors.counting()));
+    }
+
+    public List<Book> getFulfilledRequestBooks() {
+        return bookRequests.stream()
+                .map(BookRequest::getUploadedBookId)
+                .filter(id -> id != null && !id.isBlank())
+                .map(this::findBook)
+                .flatMap(Optional::stream)
+                .collect(Collectors.toList());
+    }
+
+    public List<Book> findSimilarBooksForRequest(BookRequest request, int limit) {
+        if (request == null || limit <= 0) return List.of();
+        String genre = safeLower(request.getGenre());
+        String title = safeLower(request.getTitle());
+        String author = safeLower(request.getAuthor());
+        return books.stream()
+                .filter(book -> book.getStatus() == BookStatus.APPROVED_AVAILABLE || book.getStatus() == BookStatus.BORROWED)
+                .filter(book -> safeLower(book.getGenre()).contains(genre)
+                        || safeLower(book.getTitle()).contains(title)
+                        || title.contains(safeLower(book.getTitle()))
+                        || safeLower(book.getAuthorFullName()).contains(author))
+                .limit(limit)
+                .collect(Collectors.toList());
+    }
+
+    public ActionResult notifySimilarBooksForRequest(String requestId, List<Book> alternatives) {
+        Optional<BookRequest> requestOpt = findBookRequest(requestId);
+        if (requestOpt.isEmpty()) return new ActionResult(false, "Request not found.");
+        if (alternatives == null || alternatives.isEmpty()) return new ActionResult(false, "No similar books available.");
+        BookRequest request = requestOpt.get();
+        String titles = alternatives.stream().map(Book::getTitle).collect(Collectors.joining(", "));
+        addNotification(request.getRequesterUsername(),
+                "Similar title(s) are available for your request '" + request.getTitle() + "': " + titles,
+                "Book Request", "Normal");
+        return new ActionResult(true, "Requester notified about similar books.");
+    }
+
     public ActionResult requestNewBook(String username, String title, String author, String genre, String reason) {
         if (username == null || username.isBlank()) return new ActionResult(false, "User is required.");
         if (title == null || title.isBlank()) return new ActionResult(false, "Title is required.");
@@ -767,6 +858,7 @@ public class DataStore {
         book.setCoverPath(coverPath);
         book.approve();
         books.add(book);
+        recordBookVersion(book, "Created by librarian upload.");
         save();
         refreshViews();
         return new ActionResult(true, "Book uploaded and published.");
@@ -802,6 +894,7 @@ public class DataStore {
         book.setCoverPath(coverPath);
         book.approve();
         books.add(book);
+        recordBookVersion(book, "Created from fulfilled request: " + request.getTitle());
         request.fulfill(book.getId(), note);
         addNotification(request.getRequesterUsername(),
                 "Your requested book is now uploaded and available: '" + book.getTitle() + "'.",
@@ -861,12 +954,38 @@ public class DataStore {
         book.setDescription(description.trim());
         if (filePath != null && !filePath.isBlank()) book.setFilePath(filePath.trim());
         if (coverPath != null) book.setCoverPath(coverPath);
+        recordBookVersion(book, "Updated by librarian. Title='" + book.getTitle() + "', genres='" + book.getGenre() + "'.");
         addNotification(book.getAuthorUsername(),
                 "Librarian updated published book details: '" + book.getTitle() + "'.",
                 "Book Update", "Normal");
         save();
         refreshViews();
         return new ActionResult(true, "Published book updated.");
+    }
+
+    public ActionResult bulkUpdatePublishedBooksByLibrarian(List<String> bookIds, List<String> genres, String description) {
+        if (bookIds == null || bookIds.isEmpty()) return new ActionResult(false, "No books selected.");
+        if ((genres == null || genres.isEmpty()) && (description == null || description.isBlank())) {
+            return new ActionResult(false, "Provide genres or description for bulk edit.");
+        }
+        int updated = 0;
+        for (String bookId : bookIds) {
+            Optional<Book> bookOpt = findBook(bookId);
+            if (bookOpt.isEmpty()) continue;
+            Book book = bookOpt.get();
+            if (book.getStatus() != BookStatus.APPROVED_AVAILABLE && book.getStatus() != BookStatus.BORROWED) continue;
+            if (genres != null && !genres.isEmpty()) book.setGenres(genres);
+            if (description != null && !description.isBlank()) book.setDescription(description.trim());
+            recordBookVersion(book, "Bulk edited by librarian.");
+            updated++;
+        }
+        save();
+        refreshViews();
+        return new ActionResult(updated > 0, "Bulk edited " + updated + " published book(s).");
+    }
+
+    public List<String> getBookVersionHistory(String bookId) {
+        return new ArrayList<>(bookVersionHistory.getOrDefault(bookId, List.of()));
     }
 
     public ActionResult deletePublishedBookByLibrarian(String bookId) {
@@ -879,6 +998,7 @@ public class DataStore {
         if (book.getStatus() != BookStatus.APPROVED_AVAILABLE) {
             return new ActionResult(false, "Only available published books can be deleted here.");
         }
+        recordBookVersion(book, "Deleted by librarian.");
         books.remove(book);
         addNotification(book.getAuthorUsername(),
                 "Librarian removed published book: '" + book.getTitle() + "'.",
@@ -938,6 +1058,24 @@ public class DataStore {
         save();
         refreshViews();
         return new ActionResult(true, user.isActive() ? "User activated." : "User deactivated.");
+    }
+
+    public ActionResult bulkSetUserStatus(List<String> usernames, boolean active, String currentUsername) {
+        if (usernames == null || usernames.isEmpty()) return new ActionResult(false, "No users selected.");
+        int changed = 0;
+        for (String username : usernames) {
+            if (username == null || username.equals(currentUsername)) continue;
+            Optional<User> userOpt = findUser(username);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                user.setActive(active);
+                addNotification(user.getUsername(), active ? "Your account was activated by librarian." : "Your account was deactivated by librarian.", "Account", "High");
+                changed++;
+            }
+        }
+        save();
+        refreshViews();
+        return new ActionResult(changed > 0, (active ? "Activated " : "Deactivated ") + changed + " account(s).");
     }
 
     public ActionResult approveBook(String bookId) {
@@ -1290,6 +1428,10 @@ public class DataStore {
         return value == null ? "" : value.trim().toLowerCase();
     }
 
+    private String safeBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
     private boolean hasBorrowHistory(String bookId) {
         return books.stream().anyMatch(b -> b.getId().equals(bookId) && b.getBorrowCount() > 0);
     }
@@ -1299,6 +1441,12 @@ public class DataStore {
                 .filter(book -> book.getAuthorUsername().equals(authorUsername))
                 .map(Book::getId)
                 .collect(Collectors.toSet());
+    }
+
+    private void recordBookVersion(Book book, String action) {
+        if (book == null) return;
+        String entry = LocalDateTime.now() + " | " + action;
+        bookVersionHistory.computeIfAbsent(book.getId(), key -> new ArrayList<>()).add(entry);
     }
 
     private void notifyBorrowersBookDeleted(Book book) {
