@@ -30,7 +30,15 @@ public final class SummaryService {
                     safe(author),
                     genres == null ? "" : String.join(" ", genres));
         }
+        String promptSourceText = sourceText;
+        if (DeepSeekLlmClient.isConfigured()) {
+            return DeepSeekLlmClient.generateSummary(title, author, genres, promptSourceText, style)
+                    .orElseGet(() -> generateLocalSummary(title, author, genres, promptSourceText, style));
+        }
+        return generateLocalSummary(title, author, genres, promptSourceText, style);
+    }
 
+    private static String generateLocalSummary(String title, String author, List<String> genres, String sourceText, String style) {
         List<String> keywords = keywords(sourceText, genres);
         String genreText = genres == null || genres.isEmpty() ? "the selected subject area" : String.join(", ", genres);
         String keyText = keywords.isEmpty() ? "core concepts, examples, and practical takeaways" : String.join(", ", keywords);
@@ -54,12 +62,26 @@ public final class SummaryService {
     }
 
     public static String refineSummary(String currentSummary, String title, List<String> genres) {
+        if (DeepSeekLlmClient.isConfigured()) {
+            return DeepSeekLlmClient.refineSummary(currentSummary, title, genres)
+                    .orElseGet(() -> refineLocalSummary(currentSummary, title, genres));
+        }
+        return refineLocalSummary(currentSummary, title, genres);
+    }
+
+    private static String refineLocalSummary(String currentSummary, String title, List<String> genres) {
         String base = safe(currentSummary).isBlank()
                 ? generateSummary(title, "", genres, "")
                 : currentSummary.trim();
         String firstSentence = base.split("(?<=[.!?])\\s+", 2)[0];
         String genreText = genres == null || genres.isEmpty() ? "its topic" : String.join(", ", genres);
         return firstSentence + " It has been refined into a concise catalog description for " + genreText + " readers.";
+    }
+
+    public static String providerLabel() {
+        return DeepSeekLlmClient.isConfigured()
+                ? "DeepSeek API: deepseek-v4-flash"
+                : "Local fallback summary generator";
     }
 
     public static String analyzeSentiment(String text) {

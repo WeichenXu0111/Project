@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class DataStore {
-    private static final String DATA_FILE = "data/lms-data.dat";
+    private static final String DEFAULT_DATA_FILE = "data/lms-data.dat";
     private static final int MIN_BORROW_DAYS = 1;
     private static final int MAX_BORROW_DAYS = 14;
     private static final int MAX_BORROW_LIMIT = 5;
@@ -76,6 +76,16 @@ public class DataStore {
     public record RegistrationResult(boolean success, String message) { }
     public record ActionResult(boolean success, String message) { }
 
+    private final String dataFile;
+
+    public DataStore() {
+        this(DEFAULT_DATA_FILE);
+    }
+
+    public DataStore(String dataFile) {
+        this.dataFile = dataFile == null || dataFile.isBlank() ? DEFAULT_DATA_FILE : dataFile;
+    }
+
     public static class SessionState implements Serializable {
         @Serial
         private static final long serialVersionUID = 1L;
@@ -95,7 +105,7 @@ public class DataStore {
     }
 
     public void load() {
-        Path dataPath = Path.of(DATA_FILE);
+        Path dataPath = Path.of(dataFile);
         if (!Files.exists(dataPath)) {
             seedDefaultBooks();
             save();
@@ -241,8 +251,12 @@ public class DataStore {
 
     public void save() {
         try {
-            Files.createDirectories(Path.of("data"));
-            try (ObjectOutputStream output = new ObjectOutputStream(new FileOutputStream(DATA_FILE))) {
+            Path dataPath = Path.of(dataFile);
+            Path parent = dataPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            try (ObjectOutputStream output = new ObjectOutputStream(new FileOutputStream(dataPath.toFile()))) {
                 output.writeObject(new ArrayList<>(users));
                 output.writeObject(new ArrayList<>(books));
                 output.writeObject(new HashMap<>(draftsMap));

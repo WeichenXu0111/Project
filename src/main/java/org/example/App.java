@@ -1243,6 +1243,8 @@ public class App extends Application {
             }
             setMessage(msg, "Summary finalized for submission.", true);
         });
+        Label llmProvider = new Label(SummaryService.providerLabel());
+        llmProvider.getStyleClass().add("muted-text");
 
         AuthorDraft draft = dataStore.getDraft(currentUser.getUsername());
         if (draft != null) {
@@ -1300,7 +1302,7 @@ public class App extends Application {
         g.addRow(r++, formLabel("Book File"), fileRow);
         g.addRow(r++, formLabel("Cover Image"), coverRow);
 
-        VBox box = new VBox(10, t, g, new HBox(8, generateSummary, refineSummary, finalizeSummary), new HBox(8, saveDraft, submit), msg);
+        VBox box = new VBox(10, t, llmProvider, g, new HBox(8, generateSummary, refineSummary, finalizeSummary), new HBox(8, saveDraft, submit), msg);
         box.setPadding(new Insets(14));
         box.getStyleClass().add("card");
         box.setPrefWidth(460);
@@ -2022,7 +2024,9 @@ public class App extends Application {
 
         Label note = new Label("Required format: Title, Author Names, Genre, Description, PDF File, optional Cover Upload.");
         note.getStyleClass().add("muted-text");
-        return card("Upload Library Book", note, form, new HBox(8, generateDescription, upload), msg);
+        Label llmProvider = new Label(SummaryService.providerLabel());
+        llmProvider.getStyleClass().add("muted-text");
+        return card("Upload Library Book", note, llmProvider, form, new HBox(8, generateDescription, upload), msg);
     }
 
     private TableView<User> buildUsersTable() {
