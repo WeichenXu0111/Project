@@ -63,10 +63,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Main application class for the HKUST E-Library System - Phase 2.
+ * Main application class for the HKUST E-Library System - Phase 3.
  * This JavaFX application provides portals for Students/Staff, Authors, and Librarians
- * with features like book borrowing, reading with bookmarks/highlights, profile management,
- * notifications, and persistent crash recovery.
+ * with advanced borrowing, reviews, book requests, LLM summaries, statistics, feedback,
+ * librarian publishing workflows, notifications, and persistent crash recovery.
  */
 public class App extends Application {
     // Core application state
@@ -94,7 +94,7 @@ public class App extends Application {
         scene = new Scene(root, 1200, 760);
         scene.getStylesheets().add(Objects.requireNonNull(getClass().getResource("/styles.css")).toExternalForm());
 
-        stage.setTitle("HKUST E-Library System - Phase 2");
+        stage.setTitle("HKUST E-Library System - Phase 3");
         stage.setScene(scene);
         stage.show();
 
@@ -105,7 +105,7 @@ public class App extends Application {
         Label title = new Label("HKUST Library");
         title.getStyleClass().add("app-title");
 
-        Label subtitle = new Label("E-Library System - Phase 2");
+        Label subtitle = new Label("E-Library System - Phase 3");
         subtitle.getStyleClass().add("brand-subtitle");
 
         VBox brand = new VBox(2, title, subtitle);
@@ -241,12 +241,12 @@ public class App extends Application {
     private VBox buildLanding() {
         Label title = new Label("Welcome to HKUST Library");
         title.getStyleClass().add("hero-title");
-        Label subtitle = new Label("Phase 2: Student/Staff, Author, and Librarian portals with advanced features.");
+        Label subtitle = new Label("Phase 3: Advanced student/staff, author, and librarian workflows in one system.");
         subtitle.getStyleClass().add("hero-subtitle");
 
-        VBox studentCard = portalCard("Student / Staff", "Borrow, read, bookmark, return, and manage profile.", () -> root.setCenter(buildAuth(Role.STUDENT)));
-        VBox authorCard = portalCard("Author", "Publish, update, delete, and track submission notifications.", () -> root.setCenter(buildAuth(Role.AUTHOR)));
-        VBox librarianCard = portalCard("Librarian", "Approve books, manage users, and monitor records.", () -> root.setCenter(buildAuth(Role.LIBRARIAN)));
+        VBox studentCard = portalCard("Student / Staff", "Borrow books, track reading history, review titles, and request new books.", () -> root.setCenter(buildAuth(Role.STUDENT)));
+        VBox authorCard = portalCard("Author", "Generate LLM summaries, publish books, view stats, and handle reader feedback.", () -> root.setCenter(buildAuth(Role.AUTHOR)));
+        VBox librarianCard = portalCard("Librarian", "Manage published books, process requests, download books, and monitor records.", () -> root.setCenter(buildAuth(Role.LIBRARIAN)));
 
         HBox cards = new HBox(16, studentCard, authorCard, librarianCard);
         cards.setAlignment(Pos.CENTER);
@@ -369,7 +369,7 @@ public class App extends Application {
     private BorderPane buildStudentDashboard() {
         dataStore.autoReturnExpiredBooks();
 
-        Label title = new Label("Student / Staff Dashboard");
+        Label title = new Label("Phase 3 Student / Staff Portal");
         title.getStyleClass().add("section-title");
         Label subtitle = new Label("Borrow, read, review, and track your library activity in one place.");
         subtitle.getStyleClass().add("muted-text");
@@ -1139,7 +1139,7 @@ public class App extends Application {
     }
 
     private BorderPane buildAuthorDashboard() {
-        Label title = new Label("Author Dashboard");
+        Label title = new Label("Phase 3 Author Portal");
         title.getStyleClass().add("section-title");
         Label subtitle = new Label("Publish books, generate summaries, monitor statistics, and respond to reader feedback.");
         subtitle.getStyleClass().add("muted-text");
@@ -1574,7 +1574,7 @@ public class App extends Application {
     }
 
     private BorderPane buildLibrarianDashboard() {
-        Label title = new Label("Librarian Dashboard");
+        Label title = new Label("Phase 3 Librarian Portal");
         title.getStyleClass().add("section-title");
         Label subtitle = new Label("Review submissions, upload formatted books, process requests, and monitor borrowing.");
         subtitle.getStyleClass().add("muted-text");
